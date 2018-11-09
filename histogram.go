@@ -157,3 +157,25 @@ func (h *Histogram) Variance() (float64, float64) {
 	etotal, facc := float64(h.Total()), float64(acc)
 	return avg, (facc/stotal + facc/etotal) / 2
 }
+
+// Percentiles returns calls the callback with information about the CDF.
+// The total may increase during the call, but it should never be less
+// than the count.
+func (h *Histogram) Percentiles(cb func(value, count, total int64)) {
+	acc := int64(0)
+
+	for bucket := range h.counts[:] {
+		b := loadBucket(&h.counts[bucket])
+		if b == nil {
+			continue
+		}
+
+		for entry := range b {
+			count := atomic.LoadInt64(&b[entry])
+			if count > 0 {
+				acc += count
+				cb(upperValue(uint(bucket), entry), acc, h.Total())
+			}
+		}
+	}
+}

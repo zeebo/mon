@@ -51,6 +51,19 @@ func TestHistogram(t *testing.T) {
 
 		assert.Equal(t, h.Average(), float64(500))
 	})
+
+	t.Run("Percentiles", func(t *testing.T) {
+		h := new(Histogram)
+		rng := newPCG(1, 1)
+		for i := 0; i < 1000; i++ {
+			r := int64(rng.Intn(1000))
+			h.Observe(r * r)
+		}
+
+		h.Percentiles(func(value, count, total int64) {
+			t.Log(value, count, total)
+		})
+	})
 }
 
 func BenchmarkHistogram(b *testing.B) {
@@ -106,5 +119,4 @@ func BenchmarkHistogram(b *testing.B) {
 			_, _ = his.Variance()
 		}
 	})
-
 }
