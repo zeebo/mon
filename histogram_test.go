@@ -4,8 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zeebo/wosl/internal/assert"
-	"github.com/zeebo/wosl/internal/pcg"
+	"github.com/zeebo/assert"
 )
 
 func TestHistogram(t *testing.T) {
@@ -64,7 +63,7 @@ func BenchmarkHistogram(b *testing.B) {
 
 	b.Run("Quantile", func(b *testing.B) {
 		his := new(Histogram)
-		rng := pcg.New(1, 1)
+		rng := newPCG(1, 1)
 		for i := 0; i < 1000000; i++ {
 			his.start()
 			his.done(int64(rng.Uint32()<<28 | rng.Uint32()))
@@ -80,7 +79,7 @@ func BenchmarkHistogram(b *testing.B) {
 
 	b.Run("Average", func(b *testing.B) {
 		his := new(Histogram)
-		rng := pcg.New(1, 1)
+		rng := newPCG(1, 1)
 		for i := 0; i < 1000; i++ {
 			his.start()
 			his.done(int64(rng.Intn(64)))
@@ -96,7 +95,7 @@ func BenchmarkHistogram(b *testing.B) {
 
 	b.Run("Variance", func(b *testing.B) {
 		his := new(Histogram)
-		rng := pcg.New(1, 1)
+		rng := newPCG(1, 1)
 		for i := 0; i < 1000; i++ {
 			his.start()
 			his.done(int64(rng.Intn(64)))

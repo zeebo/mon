@@ -3,7 +3,7 @@ package mon
 import (
 	"testing"
 
-	"github.com/zeebo/wosl/internal/assert"
+	"github.com/zeebo/assert"
 )
 
 func TestTime(t *testing.T) {
