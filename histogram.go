@@ -7,11 +7,9 @@ import (
 	"unsafe"
 )
 
-const (
-	// 36 buckets allows a value up to 2^42 which covers 1hr in nanoseconds
-	// 6 entries per bucket keeps a relative error of 1 / 2^6 or ~1.5%.
+const ( // histEntriesBits of 6 keeps ~1.5% error.
 	histEntriesBits = 6
-	histBuckets     = 36
+	histBuckets     = 64 - histEntriesBits
 	histEntries     = 1 << histEntriesBits
 )
 
@@ -47,20 +45,13 @@ func upperValue(bucket uint, entry int) int64 {
 // Histogram keeps track of an exponentially increasing range of buckets
 // so that there is a consistent relative error per bucket.
 type Histogram struct {
-	current int64
-	total   int64
-	mu      sync.Mutex // protects lazy allocation of buckets
-	counts  [histBuckets]*histBucket
+	total  int64
+	mu     sync.Mutex // protects lazy allocation of buckets
+	counts [histBuckets]*histBucket
 }
 
-// start informs the Histogram that a task is starting.
-func (h *Histogram) start() { atomic.AddInt64(&h.current, 1) }
-
-// done informs the Histogram that a task has completed in the given
-// amount of nanoseconds.
-func (h *Histogram) done(v int64) {
-	atomic.AddInt64(&h.current, -1)
-
+// Observe records the value in the histogram.
+func (h *Histogram) Observe(v int64) {
 	v += histEntries
 	bucket := uint64(bits.Len64(uint64(v))) - histEntriesBits - 1
 	entry := uint64(v>>bucket) - histEntries
@@ -86,9 +77,6 @@ func (h *Histogram) makeBucket(bucket uint64) *histBucket {
 	h.mu.Unlock()
 	return b
 }
-
-// Current returns the number of active calls.
-func (h *Histogram) Current() int64 { return atomic.LoadInt64(&h.current) }
 
 // Total returns the number of completed calls.
 func (h *Histogram) Total() int64 { return atomic.LoadInt64(&h.total) }

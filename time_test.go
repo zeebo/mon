@@ -10,7 +10,7 @@ func TestTime(t *testing.T) {
 	t.Run("Basic", func(t *testing.T) {
 		StartNamed("foo").Stop()
 
-		Times(func(name string, his *Histogram) bool {
+		Times(func(name string, his *State) bool {
 			assert.Equal(t, name, "foo")
 			assert.Equal(t, his.Total(), 1)
 			return true
@@ -18,7 +18,7 @@ func TestTime(t *testing.T) {
 
 		StartNamed("foo").Stop()
 
-		Times(func(name string, his *Histogram) bool {
+		Times(func(name string, his *State) bool {
 			assert.Equal(t, name, "foo")
 			assert.Equal(t, his.Total(), 2)
 			return true
@@ -26,7 +26,7 @@ func TestTime(t *testing.T) {
 
 		StartNamed("bar").Stop()
 
-		Times(func(name string, his *Histogram) bool {
+		Times(func(name string, his *State) bool {
 			switch name {
 			case "foo":
 				assert.Equal(t, his.Total(), 2)

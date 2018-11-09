@@ -1,9 +1,9 @@
-// +build !instrumented
+// +build nomon
 
 package mon
 
 // Times calls the callback with all of the histograms that have been captured.
-func Times(func(string, *Histogram) bool) {}
+func Times(func(string, *State) bool) {}
 
 // Thunk is a type that allows one to get the benefits of Time without having to
 // compute the caller every time it's called. Zero values are valid.

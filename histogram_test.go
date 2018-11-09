@@ -2,37 +2,39 @@ package mon
 
 import (
 	"testing"
-	"time"
 
 	"github.com/zeebo/assert"
 )
 
 func TestHistogram(t *testing.T) {
-	t.Run("Largest", func(t *testing.T) {
+	t.Run("Boundaries", func(t *testing.T) {
 		h := new(Histogram)
 
-		h.start()
-		h.done(int64(time.Hour))
+		h.Observe(0)
 		assert.Equal(t, h.Total(), 1)
 
-		h.start()
-		h.done(int64(2 * time.Hour))
-		assert.Equal(t, h.Total(), 1)
+		h.Observe(1<<63 - 1 - histEntries)
+		assert.Equal(t, h.Total(), 2)
+
+		h.Observe(-1)
+		assert.Equal(t, h.Total(), 2)
+
+		h.Observe(1<<63 - histEntries)
+		assert.Equal(t, h.Total(), 2)
 	})
 
 	t.Run("Basic", func(t *testing.T) {
 		h := new(Histogram)
 
 		for i := int64(0); i < 1000; i++ {
-			h.start()
-			h.done(i)
+			h.Observe(i)
 		}
 	})
 
 	t.Run("Quantile", func(t *testing.T) {
 		h := new(Histogram)
 		for i := int64(0); i < 1000; i++ {
-			h.done(i)
+			h.Observe(i)
 		}
 
 		assert.Equal(t, h.Quantile(0), 0)
@@ -44,7 +46,7 @@ func TestHistogram(t *testing.T) {
 	t.Run("Average", func(t *testing.T) {
 		h := new(Histogram)
 		for i := int64(0); i < 1000; i++ {
-			h.done(i)
+			h.Observe(i)
 		}
 
 		assert.Equal(t, h.Average(), float64(500))
@@ -52,12 +54,11 @@ func TestHistogram(t *testing.T) {
 }
 
 func BenchmarkHistogram(b *testing.B) {
-	b.Run("Start+Done", func(b *testing.B) {
+	b.Run("Observe", func(b *testing.B) {
 		his := new(Histogram)
 
 		for i := 0; i < b.N; i++ {
-			his.start()
-			his.done(1)
+			his.Observe(1)
 		}
 	})
 
@@ -65,8 +66,7 @@ func BenchmarkHistogram(b *testing.B) {
 		his := new(Histogram)
 		rng := newPCG(1, 1)
 		for i := 0; i < 1000000; i++ {
-			his.start()
-			his.done(int64(rng.Uint32()<<28 | rng.Uint32()))
+			his.Observe(int64(rng.Uint32()<<28 | rng.Uint32()))
 		}
 		assert.Equal(b, his.Total(), 1000000)
 		b.ReportAllocs()
@@ -81,8 +81,7 @@ func BenchmarkHistogram(b *testing.B) {
 		his := new(Histogram)
 		rng := newPCG(1, 1)
 		for i := 0; i < 1000; i++ {
-			his.start()
-			his.done(int64(rng.Intn(64)))
+			his.Observe(int64(rng.Intn(64)))
 		}
 		assert.Equal(b, his.Total(), 1000)
 		b.ReportAllocs()
@@ -97,8 +96,7 @@ func BenchmarkHistogram(b *testing.B) {
 		his := new(Histogram)
 		rng := newPCG(1, 1)
 		for i := 0; i < 1000; i++ {
-			his.start()
-			his.done(int64(rng.Intn(64)))
+			his.Observe(int64(rng.Intn(64)))
 		}
 		assert.Equal(b, his.Total(), 1000)
 		b.ReportAllocs()
