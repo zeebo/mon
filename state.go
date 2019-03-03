@@ -30,6 +30,11 @@ func loadState() map[string]*State {
 	return *(*map[string]*State)(atomic.LoadPointer(&states))
 }
 
+// GetState returns the current state for some name.
+func GetState(name string) *State {
+	return loadState()[name]
+}
+
 // newState allocates a state for name and stores it in the
 // global set in a race free way.
 func newState(name string) *State {
@@ -58,12 +63,15 @@ func newState(name string) *State {
 // start informs the state that a task is starting.
 func (s *State) start() { atomic.AddInt64(&s.current, 1) }
 
-// done informs the Histogram that a task has completed in the given
+// done informs the State that a task has completed in the given
 // amount of nanoseconds.
 func (s *State) done(v int64) {
 	atomic.AddInt64(&s.current, -1)
 	s.his.Observe(v)
 }
+
+// Histogram returns the Histogram associated with the state.
+func (s *State) Histogram() *Histogram { return &s.his }
 
 // Current returns the number of active calls.
 func (s *State) Current() int64 { return atomic.LoadInt64(&s.current) }

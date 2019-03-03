@@ -1,4 +1,4 @@
-package mon
+package monhandler
 
 import (
 	"fmt"
@@ -8,6 +8,7 @@ import (
 	"time"
 
 	chart "github.com/wcharczuk/go-chart"
+	"github.com/zeebo/mon"
 )
 
 // Handler serves information about collected metrics.
@@ -20,7 +21,7 @@ func (handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprintln(w, "<table border=1>")
 		fmt.Fprintln(w, "<tr><td>name</td><td>current</td><td>total</td><td>average</td><td>variance</td></tr>")
-		Times(func(name string, st *State) bool {
+		mon.Times(func(name string, st *mon.State) bool {
 			current, total := st.Current(), st.Total()
 			avg, vari := st.Variance()
 			fmt.Fprintf(w, `<tr><td><a href="%[1]s">%[1]s</a></td><td>%d</td><td>%d</td><td>%v</td><td>%v</td></tr>`,
@@ -30,14 +31,14 @@ func (handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	state := loadState()[req.URL.Path[1:]]
+	state := mon.GetState(req.URL.Path[1:])
 	if state == nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
 
 	w.Header().Set("Content-Type", "image/svg+xml")
-	makeChart(&state.his).Render(chart.SVG, w)
+	makeChart(state.Histogram()).Render(chart.SVG, w)
 }
 
 func getLabel(i int) string {
@@ -53,7 +54,7 @@ func getLabel(i int) string {
 	}
 }
 
-func makeChart(his *Histogram) *chart.Chart {
+func makeChart(his *mon.Histogram) *chart.Chart {
 	var x, y []float64
 	var t float64
 
