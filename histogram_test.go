@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/zeebo/assert"
+	"github.com/zeebo/pcg"
 )
 
 func TestHistogram(t *testing.T) {
@@ -54,9 +55,8 @@ func TestHistogram(t *testing.T) {
 
 	t.Run("Percentiles", func(t *testing.T) {
 		h := new(Histogram)
-		rng := newPCG(1, 1)
 		for i := 0; i < 1000; i++ {
-			r := int64(rng.Intn(1000))
+			r := int64(pcg.Uint32n(1000))
 			h.Observe(r * r)
 		}
 
@@ -77,24 +77,22 @@ func BenchmarkHistogram(b *testing.B) {
 
 	b.Run("Quantile", func(b *testing.B) {
 		his := new(Histogram)
-		rng := newPCG(1, 1)
 		for i := 0; i < 1000000; i++ {
-			his.Observe(int64(rng.Uint32()<<28 | rng.Uint32()))
+			his.Observe(int64(pcg.Uint64() >> histEntriesBits))
 		}
 		assert.Equal(b, his.Total(), 1000000)
 		b.ReportAllocs()
 		b.ResetTimer()
 
 		for i := 0; i < b.N; i++ {
-			his.Quantile(rng.Float64())
+			his.Quantile(pcg.Float64())
 		}
 	})
 
 	b.Run("Average", func(b *testing.B) {
 		his := new(Histogram)
-		rng := newPCG(1, 1)
 		for i := 0; i < 1000; i++ {
-			his.Observe(int64(rng.Intn(64)))
+			his.Observe(int64(pcg.Uint32n(64)))
 		}
 		assert.Equal(b, his.Total(), 1000)
 		b.ReportAllocs()
@@ -107,9 +105,8 @@ func BenchmarkHistogram(b *testing.B) {
 
 	b.Run("Variance", func(b *testing.B) {
 		his := new(Histogram)
-		rng := newPCG(1, 1)
 		for i := 0; i < 1000; i++ {
-			his.Observe(int64(rng.Intn(64)))
+			his.Observe(int64(pcg.Uint32n(64)))
 		}
 		assert.Equal(b, his.Total(), 1000)
 		b.ReportAllocs()
