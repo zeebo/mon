@@ -12,11 +12,9 @@ import (
 )
 
 // Handler serves information about collected metrics.
-const Handler = handler("")
+type Handler struct{}
 
-type handler string
-
-func (handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+func (Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if req.URL.Path == "/" {
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprintln(w, "<table border=1>")
