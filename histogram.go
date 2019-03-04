@@ -1,6 +1,7 @@
 package mon
 
 import (
+	"math"
 	"math/bits"
 	"sync"
 	"sync/atomic"
@@ -155,7 +156,7 @@ func (h *Histogram) Variance() (float64, float64) {
 	}
 
 	etotal, facc := float64(h.Total()), float64(acc)
-	return avg, (facc/stotal + facc/etotal) / 2
+	return avg, math.Sqrt((facc/stotal + facc/etotal) / 2)
 }
 
 // Percentiles returns calls the callback with information about the CDF.
