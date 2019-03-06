@@ -21,16 +21,20 @@ var (
 	descHistogram = newDesc("histogram", "Histogram of monitored times (milliseconds)")
 )
 
-type Collector struct{}
+type Collector struct {
+	ExcludeHistograms bool
+}
 
-func (Collector) Describe(ch chan<- *prometheus.Desc) {
+func (c Collector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- descCurrent
 	ch <- descTotal
 	ch <- descAverage
-	ch <- descHistogram
+	if !c.ExcludeHistograms {
+		ch <- descHistogram
+	}
 }
 
-func (Collector) Collect(metrics chan<- prometheus.Metric) {
+func (c Collector) Collect(metrics chan<- prometheus.Metric) {
 	mon.Times(func(name string, state *mon.State) bool {
 		lp := []*dto.LabelPair{{Name: &nameLabel, Value: &name}}
 		_, average := state.Average()
@@ -38,7 +42,9 @@ func (Collector) Collect(metrics chan<- prometheus.Metric) {
 		metrics <- &metric{desc: descTotal, lp: lp, total: float64(state.Total())}
 		if !math.IsNaN(average) {
 			metrics <- &metric{desc: descAverage, lp: lp, average: average / 1e9}
-			metrics <- &metric{desc: descHistogram, lp: lp, histogram: state.Histogram()}
+			if !c.ExcludeHistograms {
+				metrics <- &metric{desc: descHistogram, lp: lp, histogram: state.Histogram()}
+			}
 		}
 		return true
 	})
@@ -85,17 +91,12 @@ func (m *metric) Write(o *dto.Metric) error {
 			*his.SampleCount = uint64(total)
 			prevCount = fcount
 
-			// Add a bucket but only if it's a new millisecond
-			ms, ucount := float64((value+1e6-1)/1e6), uint64(count)
-			if l := len(his.Bucket); l == 0 || *his.Bucket[l-1].UpperBound != ms {
-				ucount := uint64(count)
-				his.Bucket = append(his.Bucket, &dto.Bucket{
-					CumulativeCount: &ucount,
-					UpperBound:      &ms,
-				})
-			} else {
-				*his.Bucket[l-1].CumulativeCount = ucount
-			}
+			// Add a bucket
+			ucount := uint64(count)
+			his.Bucket = append(his.Bucket, &dto.Bucket{
+				CumulativeCount: &ucount,
+				UpperBound:      &fvalue,
+			})
 		})
 
 		o.Histogram = his

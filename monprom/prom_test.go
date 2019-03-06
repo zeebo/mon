@@ -2,9 +2,7 @@ package monprom
 
 import (
 	"bytes"
-	"math/rand"
 	"testing"
-	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/expfmt"
@@ -13,21 +11,20 @@ import (
 
 func TestMetrics(t *testing.T) {
 	for i := 0; i < 1000; i++ {
-		func() {
-			defer mon.Start().Stop()
-			time.Sleep(time.Duration(rand.Intn(5)) * time.Millisecond)
-		}()
+		func() { defer mon.Start().Stop() }()
 	}
 
 	done := make(chan struct{})
 	defer close(done)
 	go func() {
 		defer mon.Start().Stop()
+		done <- struct{}{}
 		<-done
 	}()
+	<-done
 
 	reg := prometheus.NewRegistry()
-	reg.Register(Collector{})
+	reg.Register(Collector{ExcludeHistograms: true})
 
 	mfs, err := reg.Gather()
 	if err != nil {
