@@ -44,13 +44,17 @@ func TestHistogram(t *testing.T) {
 		assert.Equal(t, h.Quantile(1), 992)
 	})
 
-	t.Run("Average", func(t *testing.T) {
+	t.Run("Variance", func(t *testing.T) {
 		h := new(Histogram)
 		for i := int64(0); i < 1000; i++ {
 			h.Observe(i)
 		}
 
-		assert.Equal(t, h.Average(), float64(500))
+		sum, average, variance := h.Variance()
+
+		assert.Equal(t, sum, float64(500000))
+		assert.Equal(t, average, float64(500))
+		assert.Equal(t, variance, float64(83391.328))
 	})
 
 	t.Run("Percentiles", func(t *testing.T) {
@@ -89,6 +93,20 @@ func BenchmarkHistogram(b *testing.B) {
 		}
 	})
 
+	b.Run("Sum", func(b *testing.B) {
+		his := new(Histogram)
+		for i := 0; i < 1000; i++ {
+			his.Observe(int64(pcg.Uint32n(64)))
+		}
+		assert.Equal(b, his.Total(), 1000)
+		b.ReportAllocs()
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			_ = his.Sum()
+		}
+	})
+
 	b.Run("Average", func(b *testing.B) {
 		his := new(Histogram)
 		for i := 0; i < 1000; i++ {
@@ -99,7 +117,7 @@ func BenchmarkHistogram(b *testing.B) {
 		b.ResetTimer()
 
 		for i := 0; i < b.N; i++ {
-			_ = his.Average()
+			_, _ = his.Average()
 		}
 	})
 
@@ -113,7 +131,7 @@ func BenchmarkHistogram(b *testing.B) {
 		b.ResetTimer()
 
 		for i := 0; i < b.N; i++ {
-			_, _ = his.Variance()
+			_, _, _ = his.Variance()
 		}
 	})
 }

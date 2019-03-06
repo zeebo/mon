@@ -82,8 +82,11 @@ func (s *State) Total() int64 { return s.his.Total() }
 // Quantile returns an estimation of the qth quantile in [0, 1].
 func (s *State) Quantile(q float64) int64 { return s.his.Quantile(q) }
 
-// Average returns an estimation of the average.
-func (s *State) Average() float64 { return s.his.Average() }
+// Sum returns an estimation of the sum.
+func (s *State) Sum() float64 { return s.his.Sum() }
 
-// Variance returns an estimation of the average and variance.
-func (s *State) Variance() (float64, float64) { return s.his.Variance() }
+// Average returns an estimation of the sum and average.
+func (s *State) Average() (float64, float64) { return s.his.Average() }
+
+// Variance returns an estimation of the sum, average and variance.
+func (s *State) Variance() (float64, float64, float64) { return s.his.Variance() }

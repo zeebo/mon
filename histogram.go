@@ -1,7 +1,6 @@
 package mon
 
 import (
-	"math"
 	"math/bits"
 	"sync"
 	"sync/atomic"
@@ -116,8 +115,28 @@ func (h *Histogram) Quantile(q float64) int64 {
 // We return the average of those bounds. Since we're dominated by
 // cache misses, this doesn't cost much extra.
 
-// Average returns an estimation of the average.
-func (h *Histogram) Average() float64 {
+// Sum returns an estimation of the sum.
+func (h *Histogram) Sum() float64 {
+	acc := int64(0)
+
+	for bucket := range h.counts[:] {
+		b := loadBucket(&h.counts[bucket])
+		if b == nil {
+			continue
+		}
+
+		for entry := range b {
+			if count := atomic.LoadInt64(&b[entry]); count > 0 {
+				acc += count * middleValue(uint(bucket), entry)
+			}
+		}
+	}
+
+	return float64(acc)
+}
+
+// Average returns an estimation of the sum and average.
+func (h *Histogram) Average() (float64, float64) {
 	stotal, acc := float64(h.Total()), int64(0)
 
 	for bucket := range h.counts[:] {
@@ -134,12 +153,13 @@ func (h *Histogram) Average() float64 {
 	}
 
 	etotal, facc := float64(h.Total()), float64(acc)
-	return (facc/stotal + facc/etotal) / 2
+	return facc, (facc/stotal + facc/etotal) / 2
 }
 
-// Variance returns an estimation of the average and variance.
-func (h *Histogram) Variance() (float64, float64) {
-	stotal, avg, acc := float64(h.Total()), h.Average(), 0.0
+// Variance returns an estimation of the sum, average and variance.
+func (h *Histogram) Variance() (float64, float64, float64) {
+	stotal, acc := float64(h.Total()), 0.0
+	sum, avg := h.Average()
 
 	for bucket := range h.counts[:] {
 		b := loadBucket(&h.counts[bucket])
@@ -156,7 +176,7 @@ func (h *Histogram) Variance() (float64, float64) {
 	}
 
 	etotal, facc := float64(h.Total()), float64(acc)
-	return avg, math.Sqrt((facc/stotal + facc/etotal) / 2)
+	return sum, avg, (facc/stotal + facc/etotal) / 2
 }
 
 // Percentiles returns calls the callback with information about the CDF.
