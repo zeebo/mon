@@ -8,6 +8,8 @@ import (
 	"github.com/zeebo/pcg"
 )
 
+func empty() unsafe.Pointer { return nil }
+
 func TestCtrie(t *testing.T) {
 	const max = 10000
 
@@ -35,7 +37,7 @@ func BenchmarkCtrie(b *testing.B) {
 		b.ReportAllocs()
 
 		for i := 0; i < b.N; i++ {
-			tr.Upsert(ikey(int(pcg.Uint32n(10000))), nil)
+			tr.Upsert(ikey(int(pcg.Uint32n(10000))), empty)
 		}
 	})
 
@@ -43,7 +45,7 @@ func BenchmarkCtrie(b *testing.B) {
 		var sink unsafe.Pointer
 		var tr Tree
 		for i := 0; i < 10000; i++ {
-			tr.Upsert(ikey(i), nil)
+			tr.Upsert(ikey(i), empty)
 		}
 		b.ReportAllocs()
 		b.ResetTimer()
@@ -63,7 +65,7 @@ func BenchmarkCtrie(b *testing.B) {
 		b.RunParallel(func(pb *testing.PB) {
 			rng := pcg.New(pcg.Uint64())
 			for pb.Next() {
-				tr.Upsert(ikey(int(rng.Uint32n(10000))), nil)
+				tr.Upsert(ikey(int(rng.Uint32n(10000))), empty)
 			}
 		})
 	})
@@ -71,7 +73,7 @@ func BenchmarkCtrie(b *testing.B) {
 	b.Run("Iterate", func(b *testing.B) {
 		var tr Tree
 		for i := 0; i < 10000; i++ {
-			tr.Upsert(ikey(i), nil)
+			tr.Upsert(ikey(i), empty)
 		}
 		b.ReportAllocs()
 		b.ResetTimer()

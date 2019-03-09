@@ -10,6 +10,16 @@ import (
 )
 
 //
+// shorten some common phrases
+//
+
+type ptr = unsafe.Pointer
+
+func cas(addr *ptr, old, new ptr) bool { return atomic.CompareAndSwapPointer(addr, old, new) }
+func load(addr *ptr) ptr               { return atomic.LoadPointer(addr) }
+func store(addr *ptr, val ptr)         { atomic.StorePointer(addr, val) }
+
+//
 // hashing support
 //
 
@@ -41,25 +51,14 @@ var cnodeKind = &inode{key: "cnodeKind"}
 
 type inode struct {
 	key   string
-	value unsafe.Pointer
+	value ptr
 	next  *inode
 }
 
-func (i *inode) loadI() *inode {
-	return (*inode)(atomic.LoadPointer(&i.value))
-}
-
-func (i *inode) updateI(old, new *inode) bool {
-	return atomic.CompareAndSwapPointer(&i.value, unsafe.Pointer(old), unsafe.Pointer(new))
-}
-
-func (i *inode) loadC() *cnode {
-	return (*cnode)(atomic.LoadPointer(&i.value))
-}
-
-func (i *inode) updateC(old, new *cnode) bool {
-	return atomic.CompareAndSwapPointer(&i.value, unsafe.Pointer(old), unsafe.Pointer(new))
-}
+func (i *inode) loadI() *inode                { return (*inode)(load(&i.value)) }
+func (i *inode) updateI(old, new *inode) bool { return cas(&i.value, ptr(old), ptr(new)) }
+func (i *inode) loadC() *cnode                { return (*cnode)(load(&i.value)) }
+func (i *inode) updateC(old, new *cnode) bool { return cas(&i.value, ptr(old), ptr(new)) }
 
 //
 // cnode
@@ -82,14 +81,14 @@ func (c cnode) set(pos uint, i *inode) *cnode {
 
 type Tree struct{ root *inode }
 
-func (t *Tree) addr() *unsafe.Pointer { return (*unsafe.Pointer)(unsafe.Pointer(&t.root)) }
-func (t *Tree) load() *inode          { return (*inode)(atomic.LoadPointer(t.addr())) }
-func (t *Tree) store(i *inode)        { atomic.StorePointer(t.addr(), unsafe.Pointer(i)) }
+func (t *Tree) addr() *ptr   { return (*ptr)(ptr(&t.root)) }
+func (t *Tree) load() *inode { return (*inode)(load(t.addr())) }
 
+// Lookup reports the pointer associated with the key, or nil.
 func (t *Tree) Lookup(k string) unsafe.Pointer {
 	i, lev, h := t.load(), uint(0), hash(k)
 	if i == nil {
-		t.store(&inode{value: unsafe.Pointer(new(cnode)), next: cnodeKind})
+		cas(t.addr(), nil, ptr(&inode{value: ptr(new(cnode)), next: cnodeKind}))
 		i = t.load()
 	}
 
@@ -121,10 +120,13 @@ nextLnode:
 	goto nextLnode
 }
 
+// Upsert either reports the pointer associated with the key, or calls the provided
+// function to allocate a pointer, attempts to store it, and reports whatever pointer
+// is now associated with the key. It calls the function at most once.
 func (t *Tree) Upsert(k string, vf func() unsafe.Pointer) unsafe.Pointer {
-	i, lev, h, v := t.load(), uint(0), hash(k), unsafe.Pointer(nil)
+	i, lev, h, v := t.load(), uint(0), hash(k), ptr(nil)
 	if i == nil {
-		t.store(&inode{value: unsafe.Pointer(new(cnode)), next: cnodeKind})
+		cas(t.addr(), nil, ptr(&inode{value: ptr(new(cnode)), next: cnodeKind}))
 		i = t.load()
 	}
 
@@ -132,7 +134,7 @@ again:
 	// if it's an lnode or snode, extend it.
 	if i.next != cnodeKind {
 		ln := i.loadI()
-		if v == nil && vf != nil {
+		if v == nil {
 			v = vf()
 		}
 		if i.updateI(ln, &inode{key: k, value: v, next: ln}) {
@@ -148,7 +150,7 @@ again:
 
 	// if there's no entry in the array, insert it.
 	if sn == nil {
-		if v == nil && vf != nil {
+		if v == nil {
 			v = vf()
 		}
 		if i.updateC(cn, cn.set(pos, &inode{key: k, value: v})) {
@@ -171,7 +173,7 @@ again:
 	// we have a hash collision at this level. if we can't go to another level, then
 	// create an lnode.
 	if lev+_width > _bits {
-		if v == nil && vf != nil {
+		if v == nil {
 			v = vf()
 		}
 		if i.updateC(cn, cn.set(pos, &inode{key: k, value: v, next: sn})) {
@@ -185,7 +187,7 @@ again:
 	snPos := getPos(hash(sn.key), lev+_width)
 	cnn := new(cnode)
 	cnn.array[snPos] = sn
-	in := &inode{value: unsafe.Pointer(cnn), next: cnodeKind}
+	in := &inode{value: ptr(cnn), next: cnodeKind}
 	if !i.updateC(cn, cn.set(pos, in)) {
 		goto again
 	}

@@ -25,6 +25,12 @@ func storeBucket(addr **histBucket, val *histBucket) {
 	atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(addr)), unsafe.Pointer(val))
 }
 
+// casBucket atomically compares and swaps the bucket pointer into the address.
+func casBucket(addr **histBucket, old, new *histBucket) bool {
+	return atomic.CompareAndSwapPointer((*unsafe.Pointer)(unsafe.Pointer(addr)),
+		unsafe.Pointer(old), unsafe.Pointer(new))
+}
+
 // lowerValue returns the smallest value that can be stored at the entry.
 func lowerValue(bucket uint, entry int) int64 {
 	return (1<<bucket-1)<<histEntriesBits + int64(entry<<bucket)
@@ -68,8 +74,7 @@ func (h *Histogram) Observe(v int64) {
 func (h *Histogram) makeBucket(bucket uint64) *histBucket {
 	b := loadBucket(&h.counts[bucket])
 	if b == nil {
-		b = new(histBucket)
-		storeBucket(&h.counts[bucket], b)
+		casBucket(&h.counts[bucket], nil, new(histBucket))
 		b = loadBucket(&h.counts[bucket])
 	}
 	return b
