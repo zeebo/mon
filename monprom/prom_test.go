@@ -2,21 +2,20 @@ package monprom
 
 import (
 	"bytes"
+	"errors"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/expfmt"
-	"github.com/zeebo/errs"
 	"github.com/zeebo/mon"
 )
 
 func TestMetrics(t *testing.T) {
-	cls := errs.Class("test class")
 	for i := 0; i < 1000; i++ {
 		func() {
 			var err error
 			defer mon.Start().Stop(&err)
-			err = cls.New("a problem")
+			err = errors.New("problem")
 		}()
 	}
 

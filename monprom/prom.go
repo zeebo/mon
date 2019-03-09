@@ -50,7 +50,7 @@ func (c Collector) Collect(metrics chan<- prometheus.Metric) {
 		for iter := state.Errors().Iterator(); iter.Next(); {
 			name := iter.Key()
 			errcount := atomic.LoadInt64((*int64)(iter.Value()))
-			lp = append(lp[:1], &dto.LabelPair{Name: &errorLabel, Value: &name})
+			lp := append(lp[:1], &dto.LabelPair{Name: &errorLabel, Value: &name})
 			metrics <- &metric{desc: descErrors, lp: lp, float64: float64(errcount)}
 		}
 		if !math.IsNaN(average) {

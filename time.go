@@ -3,6 +3,7 @@
 package mon
 
 import (
+	"strings"
 	"sync/atomic"
 	_ "unsafe"
 
@@ -57,8 +58,6 @@ type Timer struct {
 	state *State
 }
 
-// func (r Timer) Stop() { r.state.done(nanotime() - r.now) }
-
 // Stop records the timing info.
 func (r Timer) Stop(err *error) {
 	type namer interface {
@@ -71,8 +70,16 @@ func (r Timer) Stop(err *error) {
 			if name, ok := n.Name(); ok {
 				kind = name
 			}
-		} else if *err != nil {
-			kind = "error"
+		}
+		if kind == "" && *err != nil {
+			s := (*err).Error()
+			if i := strings.IndexByte(s, ':'); i > 0 {
+				kind = s[:i]
+			} else if strings.IndexByte(s, ' ') == -1 {
+				kind = s
+			} else {
+				kind = "error"
+			}
 		}
 	}
 
