@@ -23,4 +23,4 @@ func StartNamed(name string) Timer { return Timer{} }
 type Timer struct{}
 
 // Stop records the timing info.
-func (Timer) Stop() {}
+func (Timer) Stop(*error) {}

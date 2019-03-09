@@ -2,7 +2,6 @@ package mon
 
 import (
 	"math/bits"
-	"sync"
 	"sync/atomic"
 	"unsafe"
 )
@@ -46,7 +45,6 @@ func upperValue(bucket uint, entry int) int64 {
 // so that there is a consistent relative error per bucket.
 type Histogram struct {
 	total  int64
-	mu     sync.Mutex // protects lazy allocation of buckets
 	counts [histBuckets]*histBucket
 }
 
@@ -68,13 +66,12 @@ func (h *Histogram) Observe(v int64) {
 
 // makeBucket ensures the bucket exists and returns it.
 func (h *Histogram) makeBucket(bucket uint64) *histBucket {
-	h.mu.Lock()
 	b := loadBucket(&h.counts[bucket])
 	if b == nil {
 		b = new(histBucket)
 		storeBucket(&h.counts[bucket], b)
+		b = loadBucket(&h.counts[bucket])
 	}
-	h.mu.Unlock()
 	return b
 }
 

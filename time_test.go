@@ -8,7 +8,7 @@ import (
 
 func TestTime(t *testing.T) {
 	t.Run("Basic", func(t *testing.T) {
-		StartNamed("foo").Stop()
+		StartNamed("foo").Stop(nil)
 
 		Times(func(name string, his *State) bool {
 			assert.Equal(t, name, "foo")
@@ -16,7 +16,7 @@ func TestTime(t *testing.T) {
 			return true
 		})
 
-		StartNamed("foo").Stop()
+		StartNamed("foo").Stop(nil)
 
 		Times(func(name string, his *State) bool {
 			assert.Equal(t, name, "foo")
@@ -24,7 +24,7 @@ func TestTime(t *testing.T) {
 			return true
 		})
 
-		StartNamed("bar").Stop()
+		StartNamed("bar").Stop(nil)
 
 		Times(func(name string, his *State) bool {
 			switch name {
@@ -45,7 +45,7 @@ func BenchmarkTime(b *testing.B) {
 		b.ReportAllocs()
 
 		for i := 0; i < b.N; i++ {
-			func() { defer Start().Stop() }()
+			func() { defer Start().Stop(nil) }()
 		}
 	})
 
@@ -53,7 +53,7 @@ func BenchmarkTime(b *testing.B) {
 		b.ReportAllocs()
 
 		for i := 0; i < b.N; i++ {
-			func() { defer StartNamed("bench").Stop() }()
+			func() { defer StartNamed("bench").Stop(nil) }()
 		}
 	})
 
@@ -62,7 +62,7 @@ func BenchmarkTime(b *testing.B) {
 
 		for i := 0; i < b.N; i++ {
 			timer := StartNamed("bench")
-			timer.Stop()
+			timer.Stop(nil)
 		}
 	})
 
@@ -72,7 +72,7 @@ func BenchmarkTime(b *testing.B) {
 
 		for i := 0; i < b.N; i++ {
 			timer := thunk.Start()
-			timer.Stop()
+			timer.Stop(nil)
 		}
 	})
 }

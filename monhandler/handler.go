@@ -18,12 +18,12 @@ func (Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if req.URL.Path == "/" {
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprintln(w, "<table border=1>")
-		fmt.Fprintln(w, "<tr><td>name</td><td>current</td><td>total</td><td>average</td><td>variance</td></tr>")
+		fmt.Fprintln(w, "<tr><td>name</td><td>current</td><td>total</td><td>sum</td><td>average</td><td>variance</td></tr>")
 		mon.Times(func(name string, st *mon.State) bool {
 			current, total := st.Current(), st.Total()
-			avg, vari := st.Variance()
-			fmt.Fprintf(w, `<tr><td><a href="%[1]s">%[1]s</a></td><td>%d</td><td>%d</td><td>%v</td><td>%v</td></tr>`,
-				name, current, total, avg, vari)
+			sum, avg, vari := st.Variance()
+			fmt.Fprintf(w, `<tr><td><a href="%[1]s">%[1]s</a></td><td>%d</td><td>%d</td><td>%v</td><td>%v</td><td>%v</td></tr>`,
+				name, current, total, sum, avg, vari)
 			return true
 		})
 		return

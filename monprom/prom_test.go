@@ -6,18 +6,24 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/expfmt"
+	"github.com/zeebo/errs"
 	"github.com/zeebo/mon"
 )
 
 func TestMetrics(t *testing.T) {
+	cls := errs.Class("test class")
 	for i := 0; i < 1000; i++ {
-		func() { defer mon.Start().Stop() }()
+		func() {
+			var err error
+			defer mon.Start().Stop(&err)
+			err = cls.New("a problem")
+		}()
 	}
 
 	done := make(chan struct{})
 	defer close(done)
 	go func() {
-		defer mon.Start().Stop()
+		defer mon.Start().Stop(nil)
 		done <- struct{}{}
 		<-done
 	}()

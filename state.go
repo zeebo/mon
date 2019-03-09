@@ -1,63 +1,28 @@
 package mon
 
 import (
-	"sync"
 	"sync/atomic"
 	"unsafe"
+
+	"github.com/zeebo/mon/internal/ctrie"
 )
+
+func newState() unsafe.Pointer   { return unsafe.Pointer(new(State)) }
+func newCounter() unsafe.Pointer { return unsafe.Pointer(new(int64)) }
 
 // State keeps track of all of the timer information for some calls.
 type State struct {
 	current int64
+	errors  ctrie.Tree
 	his     Histogram
 }
 
-var ( // states is a map[string]*tracker
-	states unsafe.Pointer
-	mu     sync.Mutex
-)
+// states maps names to State pointers.
+var states ctrie.Tree
 
-// initialize histograms so that we don't have to do it lazily
-func init() { storeState(make(map[string]*State)) }
-
-// storeHistogram overwrites the histogram map
-func storeState(hs map[string]*State) {
-	atomic.StorePointer(&states, unsafe.Pointer(&hs))
-}
-
-// loadState atomically loads the current histogram map
-func loadState() map[string]*State {
-	return *(*map[string]*State)(atomic.LoadPointer(&states))
-}
-
-// GetState returns the current state for some name.
+// GetState returns the current state for some name, allocating a new one if necessary.
 func GetState(name string) *State {
-	return loadState()[name]
-}
-
-// newState allocates a state for name and stores it in the
-// global set in a race free way.
-func newState(name string) *State {
-	mu.Lock()
-
-	states := loadState()
-	state, ok := states[name]
-	if ok {
-		mu.Unlock()
-		return state
-	}
-
-	next := make(map[string]*State, len(states)+1)
-	for name, state := range states {
-		next[name] = state
-	}
-
-	state = new(State)
-	next[name] = state
-	storeState(next)
-
-	mu.Unlock()
-	return state
+	return (*State)(states.Upsert(name, newState))
 }
 
 // start informs the state that a task is starting.
@@ -65,13 +30,21 @@ func (s *State) start() { atomic.AddInt64(&s.current, 1) }
 
 // done informs the State that a task has completed in the given
 // amount of nanoseconds.
-func (s *State) done(v int64) {
+func (s *State) done(v int64, kind string) {
 	atomic.AddInt64(&s.current, -1)
 	s.his.Observe(v)
+
+	if kind != "" {
+		counter := (*int64)(s.errors.Upsert(kind, newCounter))
+		atomic.AddInt64(counter, 1)
+	}
 }
 
 // Histogram returns the Histogram associated with the state.
 func (s *State) Histogram() *Histogram { return &s.his }
+
+// Errors returns a tree of error counters. Be sure to use atomic.LoadInt64.
+func (s *State) Errors() *ctrie.Tree { return &s.errors }
 
 // Current returns the number of active calls.
 func (s *State) Current() int64 { return atomic.LoadInt64(&s.current) }
