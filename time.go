@@ -32,14 +32,14 @@ type Thunk struct {
 // use the same Thunk from different functions/methods.
 func (t *Thunk) Start() Timer {
 	if t.val.Load() == nil {
-		t.val.Store(this.ThisN(2))
+		t.val.Store(this.This())
 	}
 	return StartNamed(t.val.Load().(string))
 }
 
 // Start returns a Timer using the calling function for the name.
-func Start() Timer {
-	return StartNamed(this.ThisN(2))
+func Start() (t Timer) {
+	return StartNamed(this.This())
 }
 
 // StartNamed returns a Timer that records a duration when its Done method is called.
@@ -60,28 +60,32 @@ type Timer struct {
 
 // Stop records the timing info.
 func (r Timer) Stop(err *error) {
-	type namer interface {
-		Name() (string, bool)
-	}
-
 	kind := ""
 	if err != nil {
-		if n, ok := (*err).(namer); ok {
-			if name, ok := n.Name(); ok {
-				kind = name
-			}
-		}
-		if kind == "" && *err != nil {
-			s := (*err).Error()
-			if i := strings.IndexByte(s, ':'); i > 0 {
-				kind = s[:i]
-			} else if strings.IndexByte(s, ' ') == -1 {
-				kind = s
-			} else {
-				kind = "error"
-			}
-		}
+		kind = getKind(*err)
 	}
 
 	r.state.done(nanotime()-r.now, kind)
+}
+
+// getKind returns a string that attemps to be representative of the error.
+func getKind(err error) string {
+	if n, ok := err.(interface{ Name() (string, bool) }); ok {
+		if name, ok := n.Name(); ok {
+			return name
+		}
+	}
+
+	if err != nil {
+		s := err.Error()
+		if i := strings.IndexByte(s, ':'); i > 0 {
+			return s[:i]
+		} else if strings.IndexByte(s, ' ') == -1 {
+			return s
+		} else {
+			return "error"
+		}
+	}
+
+	return ""
 }

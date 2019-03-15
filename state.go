@@ -4,7 +4,7 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/zeebo/mon/internal/ctrie"
+	"github.com/zeebo/mon/internal/lfht"
 )
 
 func newState() unsafe.Pointer   { return unsafe.Pointer(new(State)) }
@@ -13,12 +13,12 @@ func newCounter() unsafe.Pointer { return unsafe.Pointer(new(int64)) }
 // State keeps track of all of the timer information for some calls.
 type State struct {
 	current int64
-	errors  ctrie.Tree
+	errors  lfht.Table
 	his     Histogram
 }
 
 // states maps names to State pointers.
-var states ctrie.Tree
+var states lfht.Table
 
 // GetState returns the current state for some name, allocating a new one if necessary.
 func GetState(name string) *State {
@@ -43,8 +43,8 @@ func (s *State) done(v int64, kind string) {
 // Histogram returns the Histogram associated with the state.
 func (s *State) Histogram() *Histogram { return &s.his }
 
-// Errors returns a tree of error counters. Be sure to use atomic.LoadInt64.
-func (s *State) Errors() *ctrie.Tree { return &s.errors }
+// Errors returns a tree of error counters. Be sure to use atomic.LoadInt64 on the results.
+func (s *State) Errors() *lfht.Table { return &s.errors }
 
 // Current returns the number of active calls.
 func (s *State) Current() int64 { return atomic.LoadInt64(&s.current) }

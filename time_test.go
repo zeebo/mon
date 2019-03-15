@@ -1,6 +1,7 @@
 package mon
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/zeebo/assert"
@@ -45,7 +46,10 @@ func BenchmarkTime(b *testing.B) {
 		b.ReportAllocs()
 
 		for i := 0; i < b.N; i++ {
-			func() { defer Start().Stop(nil) }()
+			func() {
+				timer := Start()
+				defer timer.Stop(nil)
+			}()
 		}
 	})
 
@@ -53,11 +57,14 @@ func BenchmarkTime(b *testing.B) {
 		b.ReportAllocs()
 
 		for i := 0; i < b.N; i++ {
-			func() { defer StartNamed("bench").Stop(nil) }()
+			func() {
+				timer := StartNamed("bench")
+				defer timer.Stop(nil)
+			}()
 		}
 	})
 
-	b.Run("NoDefer", func(b *testing.B) {
+	b.Run("NamedNoDefer", func(b *testing.B) {
 		b.ReportAllocs()
 
 		for i := 0; i < b.N; i++ {
@@ -73,6 +80,16 @@ func BenchmarkTime(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			timer := thunk.Start()
 			timer.Stop(nil)
+		}
+	})
+
+	b.Run("NamedNoDeferWithError", func(b *testing.B) {
+		err := errors.New("some error: whatever")
+		b.ReportAllocs()
+
+		for i := 0; i < b.N; i++ {
+			timer := StartNamed("bench")
+			timer.Stop(&err)
 		}
 	})
 }

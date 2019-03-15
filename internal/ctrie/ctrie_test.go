@@ -1,24 +1,19 @@
 package ctrie
 
 import (
-	"runtime"
 	"testing"
 	"unsafe"
 
-	"github.com/zeebo/pcg"
+	. "github.com/zeebo/mon/internal/tests"
 )
 
-func empty() unsafe.Pointer { return nil }
-
 func TestCtrie(t *testing.T) {
-	const max = 10000
-
 	var tr Tree
-	for i := 0; i < max; i++ {
-		tr.Upsert(ikey(i), func() unsafe.Pointer { return iptr(i) })
+	for i := uint32(0); i < Size; i++ {
+		tr.Upsert(Key(i), func() unsafe.Pointer { return Ptr(i) })
 	}
-	for i := 0; i < max; i++ {
-		if tr.Lookup(ikey(i)) != iptr(i) {
+	for i := uint32(0); i < Size; i++ {
+		if tr.Lookup(Key(i)) != Ptr(i) {
 			tr.dump()
 			t.Fatal(i)
 		}
@@ -32,48 +27,12 @@ func TestCtrie(t *testing.T) {
 }
 
 func BenchmarkCtrie(b *testing.B) {
-	b.Run("Upsert", func(b *testing.B) {
-		var tr Tree
-		b.ReportAllocs()
-
-		for i := 0; i < b.N; i++ {
-			tr.Upsert(ikey(int(pcg.Uint32n(10000))), empty)
-		}
-	})
-
-	b.Run("Lookup", func(b *testing.B) {
-		var sink unsafe.Pointer
-		var tr Tree
-		for i := 0; i < 10000; i++ {
-			tr.Upsert(ikey(i), empty)
-		}
-		b.ReportAllocs()
-		b.ResetTimer()
-
-		for i := 0; i < b.N; i++ {
-			sink = tr.Lookup(ikey(int(pcg.Uint32n(10000))))
-		}
-
-		runtime.KeepAlive(sink)
-	})
-
-	b.Run("UpsertParallel", func(b *testing.B) {
-		var tr Tree
-		b.ReportAllocs()
-		b.ResetTimer()
-
-		b.RunParallel(func(pb *testing.PB) {
-			rng := pcg.New(pcg.Uint64())
-			for pb.Next() {
-				tr.Upsert(ikey(int(rng.Uint32n(10000))), empty)
-			}
-		})
-	})
+	RunBenchmarks(b, func() Type { return new(Tree) })
 
 	b.Run("Iterate", func(b *testing.B) {
 		var tr Tree
-		for i := 0; i < 10000; i++ {
-			tr.Upsert(ikey(i), empty)
+		for i := uint32(0); i < Size; i++ {
+			tr.Upsert(Key(i), Empty)
 		}
 		b.ReportAllocs()
 		b.ResetTimer()

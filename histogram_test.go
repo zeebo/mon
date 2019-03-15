@@ -59,7 +59,7 @@ func TestHistogram(t *testing.T) {
 
 	t.Run("Percentiles", func(t *testing.T) {
 		h := new(Histogram)
-		for i := 0; i < 1000; i++ {
+		for i := int64(0); i < 1000; i++ {
 			r := int64(pcg.Uint32n(1000))
 			h.Observe(r * r)
 		}
