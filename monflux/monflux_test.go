@@ -27,7 +27,7 @@ func TestMetrics(t *testing.T) {
 	<-done
 
 	var buf bytes.Buffer
-	err := Write(&buf)
+	err := Collector{Measurement: "mon", ExcludeHistograms: true}.Write(&buf)
 	if err != nil {
 		t.Fatal(err)
 	}
