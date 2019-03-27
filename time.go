@@ -32,14 +32,14 @@ type Thunk struct {
 // use the same Thunk from different functions/methods.
 func (t *Thunk) Start() Timer {
 	if t.val.Load() == nil {
-		t.val.Store(this.This())
+		t.val.Store(this.ThisN(1))
 	}
 	return StartNamed(t.val.Load().(string))
 }
 
 // Start returns a Timer using the calling function for the name.
 func Start() (t Timer) {
-	return StartNamed(this.This())
+	return StartNamed(this.ThisN(1))
 }
 
 // StartNamed returns a Timer that records a duration when its Done method is called.
