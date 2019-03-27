@@ -10,6 +10,6 @@ require (
 	github.com/wcharczuk/go-chart v2.0.1+incompatible
 	github.com/zeebo/assert v0.0.0-20181109011804-10f827ce2ed6
 	github.com/zeebo/pcg v0.0.0-20181207190024-3cdc6b625a05
-	github.com/zeebo/this v0.0.0-20190315160820-061ddbd031ac
+	github.com/zeebo/this v0.0.0-20190327175044-a2ac78b37e9a
 	golang.org/x/image v0.0.0-20181109232246-249dc8530c0e // indirect
 )
