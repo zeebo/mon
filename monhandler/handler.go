@@ -15,7 +15,7 @@ import (
 type Handler struct{}
 
 func (Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	if req.URL.Path == "/" {
+	if req.URL.Path == "/" || req.URL.Path == "" {
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprintln(w, "<table border=1>")
 		fmt.Fprintln(w, "<tr><td>name</td><td>current</td><td>total</td><td>sum</td><td>average</td><td>variance</td></tr>")
