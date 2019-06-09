@@ -21,9 +21,10 @@ type State struct {
 var states lfht.Table
 
 // GetState returns the current state for some name, allocating a new one if necessary.
-func GetState(name string) *State {
-	return (*State)(states.Upsert(name, newState))
-}
+func GetState(name string) *State { return (*State)(states.Upsert(name, newState)) }
+
+// LookupState returns the current state for some name, returning nil if none exists.
+func LookupState(name string) *State { return (*State)(states.Lookup(name)) }
 
 // start informs the state that a task is starting.
 func (s *State) start() { atomic.AddInt64(&s.current, 1) }

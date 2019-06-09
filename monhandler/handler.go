@@ -17,19 +17,20 @@ type Handler struct{}
 func (Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if req.URL.Path == "/" || req.URL.Path == "" {
 		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprintln(w, `<meta charset="UTF-8">`)
 		fmt.Fprintln(w, "<table border=1>")
-		fmt.Fprintln(w, "<tr><td>name</td><td>current</td><td>total</td><td>sum</td><td>average</td><td>variance</td></tr>")
+		fmt.Fprintln(w, "<tr><td>name</td><td>current</td><td>total</td><td>sum</td><td>average</td><td>variance</td><td>stddev</td></tr>")
 		mon.Times(func(name string, st *mon.State) bool {
 			current, total := st.Current(), st.Total()
 			sum, avg, vari := st.Variance()
-			fmt.Fprintf(w, `<tr><td><a href="%[1]s">%[1]s</a></td><td>%d</td><td>%d</td><td>%v</td><td>%v</td><td>%v</td></tr>`,
-				name, current, total, sum, avg, vari)
+			fmt.Fprintf(w, `<tr><td><a href="%[1]s">%[1]s</a></td><td>%d</td><td>%d</td><td>%v</td><td>%v</td><td>%v</td><td>%v</td></tr>`,
+				name, current, total, time.Duration(sum), time.Duration(avg), time.Duration(vari), time.Duration(math.Sqrt(vari)))
 			return true
 		})
 		return
 	}
 
-	state := mon.GetState(req.URL.Path[1:])
+	state := mon.LookupState(req.URL.Path[1:])
 	if state == nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
