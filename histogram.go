@@ -1,6 +1,7 @@
 package mon
 
 import (
+	"encoding/binary"
 	"math/bits"
 	"sync/atomic"
 	"unsafe"
@@ -13,7 +14,7 @@ const ( // histEntriesBits of 6 keeps ~1.5% error.
 )
 
 // histBucket is the type of a histogram bucket.
-type histBucket [histEntries]int64
+type histBucket [histEntries]int32
 
 // loadBucket atomically loads the bucket pointer from the address.
 func loadBucket(addr **histBucket) *histBucket {
@@ -56,6 +57,10 @@ type Histogram struct {
 
 // Observe records the value in the histogram.
 func (h *Histogram) Observe(v int64) {
+	if v < 0 {
+		return
+	}
+
 	v += histEntries
 	bucket := uint64(bits.Len64(uint64(v))) - histEntriesBits - 1
 	entry := uint64(v>>bucket) - histEntries
@@ -65,7 +70,7 @@ func (h *Histogram) Observe(v int64) {
 		if b == nil {
 			b = h.makeBucket(bucket)
 		}
-		atomic.AddInt64(&b[entry], 1)
+		atomic.AddInt32(&b[entry], 1)
 		atomic.AddInt64(&h.total, 1)
 	}
 }
@@ -91,7 +96,7 @@ func (h *Histogram) Total() int64 { return atomic.LoadInt64(&h.total) }
 
 // Quantile returns an estimation of the qth quantile in [0, 1].
 func (h *Histogram) Quantile(q float64) int64 {
-	target, acc := int64(q*float64(h.Total())+0.5), int64(0)
+	target, acc := uint64(q*float64(h.Total())+0.5), uint64(0)
 
 	for bucket := range h.counts[:] {
 		b := loadBucket(&h.counts[bucket])
@@ -100,7 +105,7 @@ func (h *Histogram) Quantile(q float64) int64 {
 		}
 
 		for entry := range b {
-			acc += atomic.LoadInt64(&b[entry])
+			acc += uint64(atomic.LoadInt32(&b[entry]))
 			if acc >= target {
 				return lowerValue(uint(bucket), entry)
 			}
@@ -128,7 +133,7 @@ func (h *Histogram) Sum() float64 {
 		}
 
 		for entry := range b {
-			if count := atomic.LoadInt64(&b[entry]); count > 0 {
+			if count := int64(atomic.LoadInt32(&b[entry])); count > 0 {
 				acc += count * middleValue(uint(bucket), entry)
 			}
 		}
@@ -148,7 +153,7 @@ func (h *Histogram) Average() (float64, float64) {
 		}
 
 		for entry := range b {
-			if count := atomic.LoadInt64(&b[entry]); count > 0 {
+			if count := int64(atomic.LoadInt32(&b[entry])); count > 0 {
 				acc += count * middleValue(uint(bucket), entry)
 			}
 		}
@@ -170,7 +175,7 @@ func (h *Histogram) Variance() (float64, float64, float64) {
 		}
 
 		for entry := range b {
-			if count := atomic.LoadInt64(&b[entry]); count > 0 {
+			if count := uint64(atomic.LoadInt32(&b[entry])); count > 0 {
 				dev := float64(middleValue(uint(bucket), entry)) - avg
 				acc += dev * dev * float64(count)
 			}
@@ -194,11 +199,79 @@ func (h *Histogram) Percentiles(cb func(value, count, total int64)) {
 		}
 
 		for entry := range b {
-			count := atomic.LoadInt64(&b[entry])
-			if count > 0 {
+			if count := int64(atomic.LoadInt32(&b[entry])); count > 0 {
 				acc += count
 				cb(upperValue(uint(bucket), entry), acc, h.Total())
 			}
 		}
 	}
+}
+
+func (h *Histogram) Serialize(buf []byte) []byte {
+	if cap(buf) < 128 {
+		buf = make([]byte, 128)
+	}
+
+	buff := bufferOf(buf)
+	buff.pos += 2 // leave room for 2 bytes at the start
+
+	// TODO(jeff): maybe we want to avoid 464 bytes on the stack
+	// write all the bucket counts and keep track of which counts were set
+	var counts [histBuckets]uint64
+	prev := int32(0)
+
+	for bucket := range h.counts[:] {
+		b := loadBucket(&h.counts[bucket])
+		if b == nil {
+			continue
+		}
+
+		for entry := range b {
+			count := atomic.LoadInt32(&b[entry])
+			if count == 0 {
+				continue
+			}
+			counts[bucket] |= 1 << uint(entry)
+
+			delta := count - prev
+			val := uint32(delta<<1) ^ uint32(delta>>31)
+			prev = count
+
+			buff = varintAppend(buff, val)
+		}
+	}
+
+	// store the length of the counts at the start of the buffer
+	binary.LittleEndian.PutUint16((*[2]byte)(buff.base)[:2], uint16(buff.pos))
+
+	// write out RLE of bits in counts
+	flip := false
+	numZero := 0
+
+nextCount:
+	for _, v := range &counts {
+		valZero := 0
+		if flip {
+			v = ^v
+		}
+
+		for {
+			zero := bits.TrailingZeros64(v)
+			valZero += zero
+			numZero += zero
+
+			if valZero >= 64 {
+				numZero -= valZero - 64
+				continue nextCount
+			}
+
+			buff = varintAppend(buff, uint32(numZero))
+			numZero = 0
+			flip = !flip
+			v = ^v >> uint(zero)
+		}
+	}
+
+	buff = varintAppend(buff, uint32(numZero))
+	return buff.prefix()
 }

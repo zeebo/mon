@@ -1,6 +1,7 @@
 package mon
 
 import (
+	"encoding/hex"
 	"testing"
 
 	"github.com/zeebo/assert"
@@ -68,6 +69,17 @@ func TestHistogram(t *testing.T) {
 			t.Log(value, count, total)
 		})
 	})
+
+	t.Run("Serialize", func(t *testing.T) {
+		h := new(Histogram)
+		for i := int64(0); i < 10000; i++ {
+			r := int64(pcg.Uint32n(1000))
+			h.Observe(r)
+		}
+
+		data := h.Serialize(nil)
+		t.Logf("%d\n%s", len(data), hex.Dump(data))
+	})
 }
 
 func BenchmarkHistogram(b *testing.B) {
@@ -132,6 +144,22 @@ func BenchmarkHistogram(b *testing.B) {
 
 		for i := 0; i < b.N; i++ {
 			_, _, _ = his.Variance()
+		}
+	})
+
+	b.Run("Serialize", func(b *testing.B) {
+		h := new(Histogram)
+		for i := int64(0); i < 10000; i++ {
+			r := int64(pcg.Uint32n(1000))
+			h.Observe(r)
+		}
+		data := h.Serialize(nil)
+		b.SetBytes(int64(len(data)))
+		b.ReportAllocs()
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			h.Serialize(data[:0])
 		}
 	})
 }

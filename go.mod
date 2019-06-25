@@ -13,3 +13,5 @@ require (
 	github.com/zeebo/this v0.0.0-20190327175044-a2ac78b37e9a
 	golang.org/x/image v0.0.0-20181109232246-249dc8530c0e // indirect
 )
+
+go 1.13
