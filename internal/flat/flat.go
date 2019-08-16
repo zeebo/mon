@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/cespare/xxhash"
+	"github.com/zeebo/xxh3"
 )
 
 // TODO: this doesn't work if the hash table runs out of space. a high load factor is
@@ -27,7 +27,7 @@ func store(addr *ptr, val ptr)         { atomic.StorePointer(addr, val) }
 
 func hash(x string) uintptr {
 	// tag the high bit on every hash so that we can't get zero.
-	return uintptr(xxhash.Sum64String(x)) | uintptr(1<<(bits.UintSize-1))
+	return uintptr(xxh3.HashString(x)) | uintptr(1<<(bits.UintSize-1))
 }
 
 const (

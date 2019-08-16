@@ -72,8 +72,8 @@ func TestHistogram(t *testing.T) {
 
 	t.Run("Serialize", func(t *testing.T) {
 		h := new(Histogram)
-		for i := int64(0); i < 10000; i++ {
-			r := int64(pcg.Uint32n(1000))
+		for i := int64(0); i < 1000; i++ {
+			r := int64(pcg.Uint32n(1000) + 500)
 			h.Observe(r)
 		}
 
@@ -149,17 +149,18 @@ func BenchmarkHistogram(b *testing.B) {
 
 	b.Run("Serialize", func(b *testing.B) {
 		h := new(Histogram)
-		for i := int64(0); i < 10000; i++ {
-			r := int64(pcg.Uint32n(1000))
+		for i := int64(0); i < 10000000; i++ {
+			r := int64(pcg.Uint32n(1000) + 500)
 			h.Observe(r)
 		}
-		data := h.Serialize(nil)
-		b.SetBytes(int64(len(data)))
-		b.ReportAllocs()
+		buf := h.Serialize(nil)
+
+		b.SetBytes(int64(len(buf)))
 		b.ResetTimer()
+		b.ReportAllocs()
 
 		for i := 0; i < b.N; i++ {
-			h.Serialize(data[:0])
+			h.Serialize(buf[:0])
 		}
 	})
 }

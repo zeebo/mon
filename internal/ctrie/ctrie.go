@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/cespare/xxhash"
+	"github.com/zeebo/xxh3"
 )
 
 //
@@ -23,7 +23,7 @@ func store(addr *ptr, val ptr)         { atomic.StorePointer(addr, val) }
 // hashing support
 //
 
-func hash(x string) uintptr { return uintptr(xxhash.Sum64String(x)) }
+func hash(x string) uintptr { return uintptr(xxh3.HashString(x)) }
 
 //
 // bitmap support

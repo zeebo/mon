@@ -5,6 +5,8 @@ import (
 	"math/bits"
 	"sync/atomic"
 	"unsafe"
+
+	"github.com/zeebo/mon/internal/buffer"
 )
 
 const ( // histEntriesBits of 6 keeps ~1.5% error.
@@ -70,8 +72,8 @@ func (h *Histogram) Observe(v int64) {
 		if b == nil {
 			b = h.makeBucket(bucket)
 		}
-		atomic.AddInt32(&b[entry], 1)
 		atomic.AddInt64(&h.total, 1)
+		atomic.AddInt32(&b[entry], 1)
 	}
 }
 
@@ -207,13 +209,16 @@ func (h *Histogram) Percentiles(cb func(value, count, total int64)) {
 	}
 }
 
-func (h *Histogram) Serialize(buf []byte) []byte {
-	if cap(buf) < 128 {
-		buf = make([]byte, 128)
+// Serialize appends to dst a binary representation of the histogram.
+func (h *Histogram) Serialize(dst []byte) []byte {
+	var le = binary.LittleEndian
+
+	if cap(dst) < 128 {
+		dst = make([]byte, 128)
 	}
 
-	buff := bufferOf(buf)
-	buff.pos += 2 // leave room for 2 bytes at the start
+	// leave room for 2 bytes at the start
+	buf := buffer.Of(dst).Advance(2)
 
 	// TODO(jeff): maybe we want to avoid 464 bytes on the stack
 	// write all the bucket counts and keep track of which counts were set
@@ -237,12 +242,17 @@ func (h *Histogram) Serialize(buf []byte) []byte {
 			val := uint32(delta<<1) ^ uint32(delta>>31)
 			prev = count
 
-			buff = varintAppend(buff, val)
+			{ // do a varint append
+				nbytes, val := varintStats(val)
+				buf = buf.Grow()
+				le.PutUint64(buf.Front()[:], val)
+				buf = buf.Advance(uintptr(nbytes))
+			}
 		}
 	}
 
 	// store the length of the counts at the start of the buffer
-	binary.LittleEndian.PutUint16((*[2]byte)(buff.base)[:2], uint16(buff.pos))
+	le.PutUint16((*[2]byte)(buf.Base())[:], uint16(buf.Pos()))
 
 	// write out RLE of bits in counts
 	flip := false
@@ -265,13 +275,25 @@ nextCount:
 				continue nextCount
 			}
 
-			buff = varintAppend(buff, uint32(numZero))
+			{ // do a varint append
+				nbytes, val := varintStats(uint32(numZero))
+				buf = buf.Grow()
+				le.PutUint64(buf.Front()[:], val)
+				buf = buf.Advance(uintptr(nbytes))
+			}
+
 			numZero = 0
 			flip = !flip
-			v = ^v >> uint(zero)
+			v = ^v >> (uint(zero) % 64)
 		}
 	}
 
-	buff = varintAppend(buff, uint32(numZero))
-	return buff.prefix()
+	{ // do a varint append
+		nbytes, val := varintStats(uint32(numZero))
+		buf = buf.Grow()
+		le.PutUint64(buf.Front()[:], val)
+		buf = buf.Advance(uintptr(nbytes))
+	}
+
+	return buf.Prefix()
 }

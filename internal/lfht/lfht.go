@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/cespare/xxhash"
+	"github.com/zeebo/xxh3"
 )
 
 // https://repositorio.inesctec.pt/bitstream/123456789/5465/1/P-00F-YAG.pdf
@@ -43,7 +43,7 @@ func untag(p ptr) *Table { return (*Table)(ptr(uintptr(p) - 1)) }
 //
 
 func hash(x string) uintptr {
-	return uintptr(xxhash.Sum64String(x))
+	return uintptr(xxh3.HashString(x))
 }
 
 //
