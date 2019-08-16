@@ -9,9 +9,9 @@ import (
 	"github.com/zeebo/mon/internal/buffer"
 )
 
-const ( // histEntriesBits of 6 keeps ~1.5% error.
-	histEntriesBits = 6
-	histBuckets     = 64 - histEntriesBits
+const ( // histEntriesBits of 8 keeps ~0.3% error.
+	histEntriesBits = 8
+	histBuckets     = 63 - histEntriesBits
 	histEntries     = 1 << histEntriesBits
 )
 
@@ -35,19 +35,38 @@ func casBucket(addr **histBucket, old, new *histBucket) bool {
 }
 
 // lowerValue returns the smallest value that can be stored at the entry.
-func lowerValue(bucket uint, entry int) int64 {
+func lowerValue(bucket, entry uint64) int64 {
 	return (1<<bucket-1)<<histEntriesBits + int64(entry<<bucket)
+}
+
+// upperValue returns the largest value that can be stored at the entry (inclusive).
+func upperValue(bucket, entry uint64) int64 {
+	return (1<<bucket-1)<<histEntriesBits + int64(entry<<bucket) + (1<<bucket - 1)
 }
 
 // middleValue returns the value between the smallest and largest that can be
 // stored at the entry.
-func middleValue(bucket uint, entry int) int64 {
-	return (1<<bucket-1)<<histEntriesBits + int64(entry<<bucket) + (1 << bucket / 2)
+func middleValue(bucket, entry uint64) float64 {
+	return middleBase(bucket) + middleOffset(bucket, entry)
 }
 
-// upperValue returns the largest value that can be stored at the entry.
-func upperValue(bucket uint, entry int) int64 {
-	return (1<<bucket-1)<<histEntriesBits + int64(entry<<bucket) + (1 << bucket)
+// middleBase returns the base offset for finding the middleValue for a bucket.
+func middleBase(bucket uint64) float64 {
+	return float64((int64(1)<<bucket-1)<<histEntriesBits) +
+		float64((int64(1)<<bucket)-1)/2
+}
+
+// middleOffset returns the amount to add to the appropriate middleBase to get the
+// middleValue for some bucket and entry.
+func middleOffset(bucket, entry uint64) float64 {
+	return float64(int64(entry << bucket))
+}
+
+// bucketEntry returns the bucket and entry that should contain the value v.
+func bucketEntry(v int64) (bucket, entry uint64) {
+	uv := uint64(v + histEntries)
+	bucket = uint64(bits.Len64(uv)) - histEntriesBits - 1
+	return bucket, uv>>bucket - histEntries
 }
 
 // Histogram keeps track of an exponentially increasing range of buckets
@@ -59,14 +78,12 @@ type Histogram struct {
 
 // Observe records the value in the histogram.
 func (h *Histogram) Observe(v int64) {
-	if v < 0 {
+	// upperValue is inlined and constant folded
+	if v < 0 || v > upperValue(histBuckets-1, histEntries-1) {
 		return
 	}
 
-	v += histEntries
-	bucket := uint64(bits.Len64(uint64(v))) - histEntriesBits - 1
-	entry := uint64(v>>bucket) - histEntries
-
+	bucket, entry := bucketEntry(v)
 	if bucket < histBuckets && entry < histEntries {
 		b := loadBucket(&h.counts[bucket])
 		if b == nil {
@@ -109,12 +126,12 @@ func (h *Histogram) Quantile(q float64) int64 {
 		for entry := range b {
 			acc += uint64(atomic.LoadInt32(&b[entry]))
 			if acc >= target {
-				return lowerValue(uint(bucket), entry)
+				return lowerValue(uint64(bucket), uint64(entry))
 			}
 		}
 	}
 
-	return upperValue(histBuckets, histEntries)
+	return upperValue(histBuckets-1, histEntries-1)
 }
 
 // When computing the average or variance, we don't do any locking.
@@ -126,7 +143,7 @@ func (h *Histogram) Quantile(q float64) int64 {
 
 // Sum returns an estimation of the sum.
 func (h *Histogram) Sum() float64 {
-	acc := int64(0)
+	var values float64
 
 	for bucket := range h.counts[:] {
 		b := loadBucket(&h.counts[bucket])
@@ -134,19 +151,21 @@ func (h *Histogram) Sum() float64 {
 			continue
 		}
 
+		base := middleBase(uint64(bucket))
 		for entry := range b {
-			if count := int64(atomic.LoadInt32(&b[entry])); count > 0 {
-				acc += count * middleValue(uint(bucket), entry)
+			if count := float64(atomic.LoadInt32(&b[entry])); count > 0 {
+				value := base + middleOffset(uint64(bucket), uint64(entry))
+				values += count * value
 			}
 		}
 	}
 
-	return float64(acc)
+	return values
 }
 
 // Average returns an estimation of the sum and average.
 func (h *Histogram) Average() (float64, float64) {
-	stotal, acc := float64(h.Total()), int64(0)
+	var values, total float64
 
 	for bucket := range h.counts[:] {
 		b := loadBucket(&h.counts[bucket])
@@ -154,21 +173,22 @@ func (h *Histogram) Average() (float64, float64) {
 			continue
 		}
 
+		base := middleBase(uint64(bucket))
 		for entry := range b {
-			if count := int64(atomic.LoadInt32(&b[entry])); count > 0 {
-				acc += count * middleValue(uint(bucket), entry)
+			if count := float64(atomic.LoadInt32(&b[entry])); count > 0 {
+				value := base + middleOffset(uint64(bucket), uint64(entry))
+				values += count * value
+				total += count
 			}
 		}
 	}
 
-	etotal, facc := float64(h.Total()), float64(acc)
-	return facc, (facc/stotal + facc/etotal) / 2
+	return values, values / total
 }
 
 // Variance returns an estimation of the sum, average and variance.
 func (h *Histogram) Variance() (float64, float64, float64) {
-	stotal, acc := float64(h.Total()), 0.0
-	sum, avg := h.Average()
+	var values, total, total2, mean, vari float64
 
 	for bucket := range h.counts[:] {
 		b := loadBucket(&h.counts[bucket])
@@ -176,16 +196,21 @@ func (h *Histogram) Variance() (float64, float64, float64) {
 			continue
 		}
 
+		base := middleBase(uint64(bucket))
 		for entry := range b {
-			if count := uint64(atomic.LoadInt32(&b[entry])); count > 0 {
-				dev := float64(middleValue(uint(bucket), entry)) - avg
-				acc += dev * dev * float64(count)
+			if count := float64(atomic.LoadInt32(&b[entry])); count > 0 {
+				value := base + middleOffset(uint64(bucket), uint64(entry))
+				values += count * value
+				total += count
+				total2 += count * count
+				mean_ := mean
+				mean += (count / total) * (value - mean_)
+				vari += count * (value - mean_) * (value - mean)
 			}
 		}
 	}
 
-	etotal, facc := float64(h.Total()), float64(acc)
-	return sum, avg, (facc/stotal + facc/etotal) / 2
+	return values, values / total, vari / total
 }
 
 // Percentiles returns calls the callback with information about the CDF.
@@ -203,7 +228,7 @@ func (h *Histogram) Percentiles(cb func(value, count, total int64)) {
 		for entry := range b {
 			if count := int64(atomic.LoadInt32(&b[entry])); count > 0 {
 				acc += count
-				cb(upperValue(uint(bucket), entry), acc, h.Total())
+				cb(upperValue(uint64(bucket), uint64(entry)), acc, h.Total())
 			}
 		}
 	}
