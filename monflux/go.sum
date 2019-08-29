@@ -1,7 +1,3 @@
-github.com/blend/go-sdk v2.0.0+incompatible/go.mod h1:3GUb0YsHFNTJ6hsJTpzdmCUl05o8HisKjx5OAlzYKdw=
-github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0/go.mod h1:E/TSTwGwJL78qG/PmXZO1EjYhfJinVAhrmmHX6Z8B9k=
-github.com/loov/plot v0.0.0-20190402091651-f4b09b520b03/go.mod h1:gSrhfSMoiPGG0CZ9E66kXjaHxFw0fzJhooyicOnz5z4=
-github.com/wcharczuk/go-chart v2.0.1+incompatible/go.mod h1:PF5tmL4EIx/7Wf+hEkpCqYi5He4u90sw+0+6FhrryuE=
 github.com/zeebo/assert v0.0.0-20181109011804-10f827ce2ed6/go.mod h1:yssERNPivllc1yU3BvpjYI5BUW+zglcz6QWqeVRL5t0=
 github.com/zeebo/assert v1.0.0 h1:qw3LXzO7lbptWIQ6DsemJIUOoaqyKbgY3M8b8yvlaaY=
 github.com/zeebo/assert v1.0.0/go.mod h1:yssERNPivllc1yU3BvpjYI5BUW+zglcz6QWqeVRL5t0=
@@ -11,7 +7,5 @@ github.com/zeebo/this v0.0.0-20190611223713-2d3f8e177b7e h1:Rg+29CCUaNYYKyzmk7bB
 github.com/zeebo/this v0.0.0-20190611223713-2d3f8e177b7e/go.mod h1:NamLT9fyihYiE0UyxEpmBm0IYbT+QWThFzOPalRS21o=
 github.com/zeebo/xxh3 v0.0.0-20190829023610-cef1e81095a7 h1:FoNwajVzJ5eHbIaUfRwRPHexibW/aW6tRhGrdQlXJ7E=
 github.com/zeebo/xxh3 v0.0.0-20190829023610-cef1e81095a7/go.mod h1:7JDKaSRPdCnT1jaNLsD2wQbyAzW3hhcBgkDihUjvILo=
-golang.org/x/image v0.0.0-20190828090100-23ea20f87cfc/go.mod h1:FeLwcggjj3mMvU+oOTbSwawSJRM1uh48EjtB4UJZlP0=
 golang.org/x/sys v0.0.0-20190826190057-c7b8b68b1456 h1:ng0gs1AKnRRuEMZoTLLlbOd+C17zUDepwGQBb/n+JVg=
 golang.org/x/sys v0.0.0-20190826190057-c7b8b68b1456/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
-golang.org/x/text v0.3.0/go.mod h1:NqM8EUOU14njkJ3fqMW+pc6Ldnwhi/IjpwHt7yyuwOQ=
