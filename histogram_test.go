@@ -47,6 +47,14 @@ func TestHistogram(t *testing.T) {
 		assert.Equal(t, len(bucketEntries), histBuckets*histEntries)
 	})
 
+	t.Run("Zero", func(t *testing.T) {
+		h := new(Histogram)
+		sum, average, variance := h.Variance()
+		assert.Equal(t, sum, 0.0)
+		assert.Equal(t, average, 0.0)
+		assert.Equal(t, variance, 0.0)
+	})
+
 	t.Run("Boundaries", func(t *testing.T) {
 		h := new(Histogram)
 
@@ -97,9 +105,9 @@ func TestHistogram(t *testing.T) {
 
 		sum, average, variance := h.Variance()
 
-		assert.Equal(t, sum, float64(499500))
-		assert.Equal(t, average, float64(499.5))
-		assert.Equal(t, variance, float64(83332.832))
+		assert.Equal(t, sum, 499500.0)
+		assert.Equal(t, average, 499.5)
+		assert.Equal(t, variance, 83332.832)
 	})
 
 	t.Run("Percentiles", func(t *testing.T) {

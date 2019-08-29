@@ -183,6 +183,9 @@ func (h *Histogram) Average() (float64, float64) {
 		}
 	}
 
+	if total == 0 {
+		return 0, 0
+	}
 	return values, values / total
 }
 
@@ -210,6 +213,9 @@ func (h *Histogram) Variance() (float64, float64, float64) {
 		}
 	}
 
+	if total == 0 {
+		return 0, 0, 0
+	}
 	return values, values / total, vari / total
 }
 
