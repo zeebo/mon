@@ -1,7 +1,9 @@
 package mon
 
 import (
+	"encoding/binary"
 	"encoding/hex"
+	"sync/atomic"
 	"testing"
 
 	"github.com/zeebo/assert"
@@ -90,9 +92,9 @@ func TestHistogram(t *testing.T) {
 		}
 
 		assert.Equal(t, h.Quantile(0), 0)
-		assert.Equal(t, h.Quantile(.25), 249)
-		assert.Equal(t, h.Quantile(.5), 498)
-		assert.Equal(t, h.Quantile(1), 996)
+		assert.Equal(t, h.Quantile(.25), 250)
+		assert.Equal(t, h.Quantile(.5), 500)
+		assert.Equal(t, h.Quantile(1), 1000)
 	})
 
 	t.Run("Variance", func(t *testing.T) {
@@ -105,9 +107,9 @@ func TestHistogram(t *testing.T) {
 
 		sum, average, variance := h.Variance()
 
-		assert.Equal(t, sum, 499500.0)
-		assert.Equal(t, average, 499.5)
-		assert.Equal(t, variance, 83332.832)
+		assert.Equal(t, sum, 499532.0)
+		assert.Equal(t, average, 499.532)
+		assert.Equal(t, variance, 83361.358976)
 	})
 
 	t.Run("Percentiles", func(t *testing.T) {
@@ -124,13 +126,33 @@ func TestHistogram(t *testing.T) {
 
 	t.Run("Serialize", func(t *testing.T) {
 		h := new(Histogram)
-		for i := int64(0); i < 1000; i++ {
+		for i := int64(0); i < 10000; i++ {
+			r := int64(pcg.Uint32n(100) + 500)
+			h.Observe(r)
+		}
+		h.Observe(1)
+		h.Observe(3)
+		h.Observe(5)
+
+		data := h.Serialize(nil)
+		t.Logf("%d\n%s", len(data), hex.Dump(data))
+		t.Logf("%064b\n", binary.LittleEndian.Uint64(data[:8]))
+	})
+
+	t.Run("Load", func(t *testing.T) {
+		h := new(Histogram)
+		for i := int64(0); i < 10000; i++ {
 			r := int64(pcg.Uint32n(1000) + 500)
 			h.Observe(r)
 		}
 
-		data := h.Serialize(nil)
-		t.Logf("%d\n%s", len(data), hex.Dump(data))
+		h2 := new(Histogram)
+		assert.NoError(t, h2.Load(h.Serialize(nil)))
+
+		assert.Equal(t, h.Total(), h2.Total())
+		assert.Equal(t, h.Sum(), h2.Sum())
+		t.Log(h.Average())
+		t.Log(h2.Average())
 	})
 }
 
@@ -141,6 +163,17 @@ func BenchmarkHistogram(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			his.Observe(1)
 		}
+	})
+
+	b.Run("Observe_Parallel", func(b *testing.B) {
+		his := new(Histogram)
+		n := int64(0)
+		b.RunParallel(func(pb *testing.PB) {
+			i := int64(1024) << uint64(atomic.AddInt64(&n, 1))
+			for pb.Next() {
+				his.Observe(i)
+			}
+		})
 	})
 
 	b.Run("Quantile", func(b *testing.B) {
@@ -213,6 +246,23 @@ func BenchmarkHistogram(b *testing.B) {
 
 		for i := 0; i < b.N; i++ {
 			h.Serialize(buf[:0])
+		}
+	})
+
+	b.Run("Load", func(b *testing.B) {
+		h := new(Histogram)
+		for i := int64(0); i < 10000000; i++ {
+			r := int64(pcg.Uint32n(1000) + 500)
+			h.Observe(r)
+		}
+		buf := h.Serialize(nil)
+
+		b.SetBytes(int64(len(buf)))
+		b.ResetTimer()
+		b.ReportAllocs()
+
+		for i := 0; i < b.N; i++ {
+			_ = h.Load(buf)
 		}
 	})
 }

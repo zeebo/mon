@@ -1,10 +1,18 @@
 package mon
 
 import (
+	"sync"
 	"sync/atomic"
 	"unsafe"
 
 	"github.com/zeebo/mon/internal/lfht"
+	"github.com/zeebo/swaparoo"
+)
+
+var (
+	statesMu sync.Mutex       // protects concurrent Collect calls.
+	states   [2]lfht.Table    // states maps names to State pointers.
+	tracker  swaparoo.Tracker // keeps track of which state is valid.
 )
 
 func newState() unsafe.Pointer   { return unsafe.Pointer(new(State)) }
@@ -12,29 +20,57 @@ func newCounter() unsafe.Pointer { return unsafe.Pointer(new(int64)) }
 
 // State keeps track of all of the timer information for some calls.
 type State struct {
-	current int64
-	errors  lfht.Table
-	his     Histogram
+	errors lfht.Table
+	his    Histogram
 }
 
-// states maps names to State pointers.
-var states lfht.Table
+// Times calls the callback with all of the histograms that have been captured.
+func Times(cb func(string, *State) bool) {
+	token := tracker.Acquire()
+	for iter := states[token.Gen()%2].Iterator(); iter.Next(); {
+		if !cb(iter.Key(), (*State)(iter.Value())) {
+			goto done
+		}
+	}
+done:
+	token.Release()
+}
+
+// Collect consumes all of the histograms that have been captures and calls
+// the callback for each one.
+func Collect(cb func(string, *State) bool) {
+	statesMu.Lock()
+	gen := tracker.Increment().Wait()
+	for iter := states[gen%2].Iterator(); iter.Next(); {
+		if !cb(iter.Key(), (*State)(iter.Value())) {
+			goto done
+		}
+	}
+done:
+	states[gen%2] = lfht.Table{}
+	statesMu.Unlock()
+}
 
 // GetState returns the current state for some name, allocating a new one if necessary.
-func GetState(name string) *State { return (*State)(states.Upsert(name, newState)) }
+func GetState(name string) *State {
+	token := tracker.Acquire()
+	state := (*State)(states[token.Gen()%2].Upsert(name, newState))
+	token.Release()
+	return state
+}
 
 // LookupState returns the current state for some name, returning nil if none exists.
-func LookupState(name string) *State { return (*State)(states.Lookup(name)) }
-
-// start informs the state that a task is starting.
-func (s *State) start() { atomic.AddInt64(&s.current, 1) }
+func LookupState(name string) *State {
+	token := tracker.Acquire()
+	state := (*State)(states[token.Gen()%2].Lookup(name))
+	token.Release()
+	return state
+}
 
 // done informs the State that a task has completed in the given
 // amount of nanoseconds.
 func (s *State) done(v int64, kind string) {
-	atomic.AddInt64(&s.current, -1)
 	s.his.Observe(v)
-
 	if kind != "" {
 		counter := (*int64)(s.errors.Upsert(kind, newCounter))
 		atomic.AddInt64(counter, 1)
@@ -46,9 +82,6 @@ func (s *State) Histogram() *Histogram { return &s.his }
 
 // Errors returns a tree of error counters. Be sure to use atomic.LoadInt64 on the results.
 func (s *State) Errors() *lfht.Table { return &s.errors }
-
-// Current returns the number of active calls.
-func (s *State) Current() int64 { return atomic.LoadInt64(&s.current) }
 
 // Total returns the number of completed calls.
 func (s *State) Total() int64 { return s.his.Total() }

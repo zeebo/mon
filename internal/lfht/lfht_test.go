@@ -1,52 +1,12 @@
 package lfht
 
 import (
-	"math"
 	"runtime"
 	"testing"
 
 	. "github.com/zeebo/mon/internal/tests"
 	"github.com/zeebo/pcg"
 )
-
-func TestBitmap(t *testing.T) {
-	var b bitmap128
-
-	for i := uint(0); i < 128; i++ {
-		b.set(i)
-
-		got, ok := b.next()
-		if !ok || got != i {
-			t.Fatal(i)
-		}
-		if b != (bitmap128{}) {
-			t.Fatal(b)
-		}
-	}
-}
-
-func BenchmarkBitmap(b *testing.B) {
-	b.Run("Next", func(b *testing.B) {
-		idx := uint(0)
-		for i := 0; i < b.N; i++ {
-			bm := bitmap128{1, 0}
-			idx, _ = bm.next()
-		}
-		runtime.KeepAlive(idx)
-	})
-
-	b.Run("NextAll", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			b := bitmap128{math.MaxUint64, math.MaxUint64}
-			for {
-				_, ok := b.next()
-				if !ok {
-					break
-				}
-			}
-		}
-	})
-}
 
 func TestTable(t *testing.T) {
 	var ta Table

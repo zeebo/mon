@@ -2,9 +2,12 @@ package mon
 
 import (
 	"errors"
+	"fmt"
+	"sync/atomic"
 	"testing"
 
 	"github.com/zeebo/assert"
+	"github.com/zeebo/this"
 )
 
 func TestTime(t *testing.T) {
@@ -38,6 +41,13 @@ func TestTime(t *testing.T) {
 			}
 			return true
 		})
+
+		Collect(func(name string, his *State) bool { return true })
+
+		Collect(func(name string, his *State) bool {
+			assert.That(t, false)
+			return true
+		})
 	})
 }
 
@@ -48,6 +58,17 @@ func BenchmarkTime(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			func() {
 				timer := Start()
+				defer timer.Stop(nil)
+			}()
+		}
+	})
+
+	b.Run("This", func(b *testing.B) {
+		b.ReportAllocs()
+
+		for i := 0; i < b.N; i++ {
+			func() {
+				timer := StartNamed(this.This())
 				defer timer.Stop(nil)
 			}()
 		}
@@ -64,32 +85,45 @@ func BenchmarkTime(b *testing.B) {
 		}
 	})
 
-	b.Run("NamedNoDefer", func(b *testing.B) {
-		b.ReportAllocs()
-
-		for i := 0; i < b.N; i++ {
-			timer := StartNamed("bench")
-			timer.Stop(nil)
-		}
-	})
-
-	b.Run("ThunkNoDefer", func(b *testing.B) {
+	b.Run("Thunk", func(b *testing.B) {
 		b.ReportAllocs()
 		var thunk Thunk
 
 		for i := 0; i < b.N; i++ {
-			timer := thunk.Start()
-			timer.Stop(nil)
+			func() {
+				timer := thunk.Start()
+				defer timer.Stop(nil)
+			}()
 		}
 	})
 
-	b.Run("NamedNoDeferWithError", func(b *testing.B) {
+	b.Run("WithError", func(b *testing.B) {
 		err := errors.New("some error: whatever")
 		b.ReportAllocs()
 
 		for i := 0; i < b.N; i++ {
-			timer := StartNamed("bench")
-			timer.Stop(&err)
+			func() {
+				timer := Start()
+				defer timer.Stop(&err)
+			}()
 		}
+	})
+
+	b.Run("Observe", func(b *testing.B) {
+		b.ReportAllocs()
+
+		for i := 0; i < b.N; i++ {
+			GetState("bench").Histogram().Observe(1)
+		}
+	})
+
+	b.Run("Observe_Parallel", func(b *testing.B) {
+		var n uint64
+		b.RunParallel(func(pb *testing.PB) {
+			metric := fmt.Sprintf("bench-%d", atomic.AddUint64(&n, 1))
+			for pb.Next() {
+				GetState(metric).Histogram().Observe(1)
+			}
+		})
 	})
 }

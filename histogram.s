@@ -1,0 +1,43 @@
+#include "textflag.h"
+
+// func sumHistogramAVX2(data *[64]uint32) uint64
+TEXT ·sumHistogramAVX2(SB), NOSPLIT, $0-16
+	MOVQ         data+0(FP), AX
+	VPMOVZXDQ    (AX), Y0
+	VPMOVZXDQ    16(AX), Y1
+	VPADDQ       Y0, Y1, Y0
+	VPMOVZXDQ    32(AX), Y1
+	VPADDQ       Y0, Y1, Y0
+	VPMOVZXDQ    48(AX), Y1
+	VPADDQ       Y0, Y1, Y0
+	VPMOVZXDQ    64(AX), Y1
+	VPADDQ       Y0, Y1, Y0
+	VPMOVZXDQ    80(AX), Y1
+	VPADDQ       Y0, Y1, Y0
+	VPMOVZXDQ    96(AX), Y1
+	VPADDQ       Y0, Y1, Y0
+	VPMOVZXDQ    112(AX), Y1
+	VPADDQ       Y0, Y1, Y0
+	VPMOVZXDQ    128(AX), Y1
+	VPADDQ       Y0, Y1, Y0
+	VPMOVZXDQ    144(AX), Y1
+	VPADDQ       Y0, Y1, Y0
+	VPMOVZXDQ    160(AX), Y1
+	VPADDQ       Y0, Y1, Y0
+	VPMOVZXDQ    176(AX), Y1
+	VPADDQ       Y0, Y1, Y0
+	VPMOVZXDQ    192(AX), Y1
+	VPADDQ       Y0, Y1, Y0
+	VPMOVZXDQ    208(AX), Y1
+	VPADDQ       Y0, Y1, Y0
+	VPMOVZXDQ    224(AX), Y1
+	VPADDQ       Y0, Y1, Y0
+	VPMOVZXDQ    240(AX), Y1
+	VPADDQ       Y0, Y1, Y0
+	VEXTRACTI128 $0x01, Y0, X1
+	VPADDQ       Y0, Y1, Y0
+	VPSHUFD      $0x4e, X0, X1
+	VPADDQ       X0, X1, X0
+	VMOVQ        X0, BX
+	MOVQ         BX, ret+8(FP)
+	RET

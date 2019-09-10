@@ -13,15 +13,6 @@ import (
 //go:linkname nanotime runtime.nanotime
 func nanotime() (mono int64)
 
-// Times calls the callback with all of the histograms that have been captured.
-func Times(cb func(string, *State) bool) {
-	for iter := states.Iterator(); iter.Next(); {
-		if !cb(iter.Key(), (*State)(iter.Value())) {
-			return
-		}
-	}
-}
-
 // Thunk is a type that allows one to get the benefits of Time without having to
 // compute the caller every time it's called. Zero values are valid.
 type Thunk struct {
@@ -44,11 +35,9 @@ func Start() (t Timer) {
 
 // StartNamed returns a Timer that records a duration when its Done method is called.
 func StartNamed(name string) Timer {
-	state := GetState(name)
-	state.start()
 	return Timer{
 		now:   nanotime(),
-		state: state,
+		state: GetState(name),
 	}
 }
 

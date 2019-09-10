@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 	"unsafe"
 
+	"github.com/zeebo/mon/internal/bitmap"
 	"github.com/zeebo/xxh3"
 )
 
@@ -16,7 +17,7 @@ import (
 //
 
 const (
-	_width    = 7
+	_width    = 3
 	_entries  = 1 << _width
 	_mask     = _entries - 1
 	_bits     = bits.UintSize
@@ -68,49 +69,13 @@ type hashedKey struct {
 }
 
 //
-// bitmap
-//
-
-type bitmap128 [2]uint64
-
-func (b *bitmap128) clone() bitmap128 {
-	return bitmap128{atomic.LoadUint64(&b[0]), atomic.LoadUint64(&b[1])}
-}
-
-func (b *bitmap128) set(idx uint) {
-	atomic.AddUint64(&b[(idx>>6)&1], 1<<(idx&63))
-}
-
-func (b *bitmap128) has(idx uint) bool {
-	return atomic.LoadUint64(&b[(idx>>6)&1])&(1<<(idx&63)) > 0
-}
-
-func (b *bitmap128) next() (uint, bool) {
-	u := b[0]
-	c := u & (u - 1)
-	idx := uint(bits.Len64(u ^ c))
-	b[0] = c
-
-	if u > 0 {
-		return idx - 1, true
-	}
-
-	u = b[1]
-	c = u & (u - 1)
-	idx = 63 + uint(bits.Len64(u^c))
-	b[1] = c
-
-	return idx, u > 0
-}
-
-//
 // data structrue
 //
 
 type tableHeader struct {
 	level  uint
 	prev   *Table
-	bitmap bitmap128
+	bitmap bitmap.B128
 }
 
 type Table struct {
@@ -146,7 +111,7 @@ func (t *Table) upsert(key hashedKey, value lazyValue) *node {
 	if entryRef == nil {
 		newNode := &node{key: key.key, value: value.get(), next: tag(t)}
 		if cas(bucket, nil, ptr(newNode)) {
-			t.bitmap.set(idx)
+			t.bitmap.Set(idx)
 			return newNode
 		}
 		entryRef = load(bucket)
@@ -217,7 +182,7 @@ func (t *Table) adjustNode(n *node) {
 	entryRef := load(bucket)
 	if entryRef == nil {
 		if cas(bucket, nil, ptr(n)) {
-			t.bitmap.set(idx)
+			t.bitmap.Set(idx)
 			return
 		}
 		entryRef = load(bucket)
@@ -311,13 +276,13 @@ type Iterator struct {
 	top   int
 	stack [_maxLevel]struct {
 		table *Table
-		pos   bitmap128
+		pos   bitmap.B128
 	}
 }
 
 func (t *Table) Iterator() (itr Iterator) {
 	itr.stack[0].table = t
-	itr.stack[0].pos = t.bitmap.clone()
+	itr.stack[0].pos = t.bitmap.Clone()
 	return itr
 }
 
@@ -332,7 +297,7 @@ next:
 	// if we don't have a node, load it from the top of the stack
 	var nextTable *Table
 	if i.n == nil {
-		idx, ok := is.pos.next()
+		idx, ok := is.pos.Next()
 		if !ok {
 			// if we've walked the whole table, pop it and try again
 			i.top--
@@ -379,7 +344,7 @@ next:
 	if nextTable != is.table {
 		i.top++
 		i.stack[i.top].table = nextTable
-		i.stack[i.top].pos = nextTable.bitmap.clone()
+		i.stack[i.top].pos = nextTable.bitmap.Clone()
 	}
 
 	// walk to the next entry in the top of the stack table

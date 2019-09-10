@@ -2,30 +2,54 @@ package mon
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math/bits"
+	"strings"
 	"sync/atomic"
 	"unsafe"
 
+	"github.com/zeebo/errs"
+	"github.com/zeebo/mon/internal/bitmap"
 	"github.com/zeebo/mon/internal/buffer"
+	"golang.org/x/sys/cpu"
 )
 
-const ( // histEntriesBits of 8 keeps ~0.3% error.
-	histEntriesBits = 8
+//go:noescape
+func sumHistogramAVX2(*[64]uint32) uint64
+
+var sumHistogram = map[bool]func(*[64]uint32) uint64{
+	true:  sumHistogramAVX2,
+	false: sumHistogramSlow,
+}[cpu.X86.HasAVX2]
+
+func sumHistogramSlow(buf *[64]uint32) (total uint64) {
+	for i := 0; i <= 56; i += 8 {
+		total += uint64(buf[i+0])
+		total += uint64(buf[i+1])
+		total += uint64(buf[i+2])
+		total += uint64(buf[i+3])
+		total += uint64(buf[i+4])
+		total += uint64(buf[i+5])
+		total += uint64(buf[i+6])
+		total += uint64(buf[i+7])
+	}
+	return total
+}
+
+const ( // histEntriesBits of 6 keeps ~1.5% error.
+	histEntriesBits = 6
 	histBuckets     = 63 - histEntriesBits
 	histEntries     = 1 << histEntriesBits
 )
 
 // histBucket is the type of a histogram bucket.
-type histBucket [histEntries]int32
+type histBucket struct {
+	entries [histEntries]uint32
+}
 
 // loadBucket atomically loads the bucket pointer from the address.
 func loadBucket(addr **histBucket) *histBucket {
 	return (*histBucket)(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(addr))))
-}
-
-// storeBucket atomically stores the bucket pointer into the address.
-func storeBucket(addr **histBucket, val *histBucket) {
-	atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(addr)), unsafe.Pointer(val))
 }
 
 // casBucket atomically compares and swaps the bucket pointer into the address.
@@ -42,12 +66,6 @@ func lowerValue(bucket, entry uint64) int64 {
 // upperValue returns the largest value that can be stored at the entry (inclusive).
 func upperValue(bucket, entry uint64) int64 {
 	return (1<<bucket-1)<<histEntriesBits + int64(entry<<bucket) + (1<<bucket - 1)
-}
-
-// middleValue returns the value between the smallest and largest that can be
-// stored at the entry.
-func middleValue(bucket, entry uint64) float64 {
-	return middleBase(bucket) + middleOffset(bucket, entry)
 }
 
 // middleBase returns the base offset for finding the middleValue for a bucket.
@@ -72,8 +90,8 @@ func bucketEntry(v int64) (bucket, entry uint64) {
 // Histogram keeps track of an exponentially increasing range of buckets
 // so that there is a consistent relative error per bucket.
 type Histogram struct {
-	total  int64
-	counts [histBuckets]*histBucket
+	bitmap  bitmap.B64
+	buckets [64]*histBucket // 64 so that bounds checks can be removed easier
 }
 
 // Observe records the value in the histogram.
@@ -85,27 +103,37 @@ func (h *Histogram) Observe(v int64) {
 
 	bucket, entry := bucketEntry(v)
 	if bucket < histBuckets && entry < histEntries {
-		b := loadBucket(&h.counts[bucket])
+		b := loadBucket(&h.buckets[bucket])
 		if b == nil {
 			b = h.makeBucket(bucket)
 		}
-		atomic.AddInt64(&h.total, 1)
-		atomic.AddInt32(&b[entry], 1)
+		atomic.AddUint32(&b.entries[entry], 1)
 	}
 }
 
 // makeBucket ensures the bucket exists and returns it.
 func (h *Histogram) makeBucket(bucket uint64) *histBucket {
-	b := loadBucket(&h.counts[bucket])
-	if b == nil {
-		casBucket(&h.counts[bucket], nil, new(histBucket))
-		b = loadBucket(&h.counts[bucket])
+	addr := &h.buckets[bucket%64]
+	b := new(histBucket)
+	if !casBucket(addr, nil, b) {
+		b = loadBucket(addr)
+	} else {
+		h.bitmap.Set(uint(bucket))
 	}
 	return b
 }
 
 // Total returns the number of completed calls.
-func (h *Histogram) Total() int64 { return atomic.LoadInt64(&h.total) }
+func (h *Histogram) Total() (total int64) {
+	bm := h.bitmap.Clone()
+	for {
+		bucket, ok := bm.Next()
+		if !ok {
+			return total
+		}
+		total += int64(sumHistogram(&loadBucket(&h.buckets[bucket]).entries))
+	}
+}
 
 // For quantile, we compute a target value at the start. After that, when
 // walking the counts, we are sure we'll still hit the target since the
@@ -117,21 +145,28 @@ func (h *Histogram) Total() int64 { return atomic.LoadInt64(&h.total) }
 func (h *Histogram) Quantile(q float64) int64 {
 	target, acc := uint64(q*float64(h.Total())+0.5), uint64(0)
 
-	for bucket := range h.counts[:] {
-		b := loadBucket(&h.counts[bucket])
-		if b == nil {
+	bm := h.bitmap.Clone()
+	for {
+		bucket, ok := bm.Next()
+		if !ok {
+			return upperValue(histBuckets-1, histEntries-1)
+		}
+
+		b := loadBucket(&h.buckets[bucket])
+		bacc := acc + sumHistogram(&b.entries)
+		if bacc < target {
+			acc = bacc
 			continue
 		}
 
-		for entry := range b {
-			acc += uint64(atomic.LoadInt32(&b[entry]))
+		for entry := range b.entries[:] {
+			acc += uint64(atomic.LoadUint32(&b.entries[entry]))
 			if acc >= target {
-				return lowerValue(uint64(bucket), uint64(entry))
+				base := middleBase(uint64(bucket))
+				return int64(base + 0.5 + middleOffset(uint64(bucket), uint64(entry)))
 			}
 		}
 	}
-
-	return upperValue(histBuckets-1, histEntries-1)
 }
 
 // When computing the average or variance, we don't do any locking.
@@ -145,63 +180,71 @@ func (h *Histogram) Quantile(q float64) int64 {
 func (h *Histogram) Sum() float64 {
 	var values float64
 
-	for bucket := range h.counts[:] {
-		b := loadBucket(&h.counts[bucket])
-		if b == nil {
-			continue
+	bm := h.bitmap.Clone()
+	for {
+		bucket, ok := bm.Next()
+		if !ok {
+			return values
 		}
 
+		b := loadBucket(&h.buckets[bucket])
 		base := middleBase(uint64(bucket))
-		for entry := range b {
-			if count := float64(atomic.LoadInt32(&b[entry])); count > 0 {
+
+		for entry := range b.entries[:] {
+			if count := float64(atomic.LoadUint32(&b.entries[entry])); count > 0 {
 				value := base + middleOffset(uint64(bucket), uint64(entry))
 				values += count * value
 			}
 		}
 	}
-
-	return values
 }
 
 // Average returns an estimation of the sum and average.
 func (h *Histogram) Average() (float64, float64) {
 	var values, total float64
 
-	for bucket := range h.counts[:] {
-		b := loadBucket(&h.counts[bucket])
-		if b == nil {
-			continue
+	bm := h.bitmap.Clone()
+	for {
+		bucket, ok := bm.Next()
+		if !ok {
+			if total == 0 {
+				return 0, 0
+			}
+			return values, values / total
 		}
 
+		b := loadBucket(&h.buckets[bucket])
 		base := middleBase(uint64(bucket))
-		for entry := range b {
-			if count := float64(atomic.LoadInt32(&b[entry])); count > 0 {
+
+		for entry := range b.entries[:] {
+			if count := float64(atomic.LoadUint32(&b.entries[entry])); count > 0 {
 				value := base + middleOffset(uint64(bucket), uint64(entry))
 				values += count * value
 				total += count
 			}
 		}
 	}
-
-	if total == 0 {
-		return 0, 0
-	}
-	return values, values / total
 }
 
 // Variance returns an estimation of the sum, average and variance.
 func (h *Histogram) Variance() (float64, float64, float64) {
 	var values, total, total2, mean, vari float64
 
-	for bucket := range h.counts[:] {
-		b := loadBucket(&h.counts[bucket])
-		if b == nil {
-			continue
+	bm := h.bitmap.Clone()
+	for {
+		bucket, ok := bm.Next()
+		if !ok {
+			if total == 0 {
+				return 0, 0, 0
+			}
+			return values, values / total, vari / total
 		}
 
+		b := loadBucket(&h.buckets[bucket])
 		base := middleBase(uint64(bucket))
-		for entry := range b {
-			if count := float64(atomic.LoadInt32(&b[entry])); count > 0 {
+
+		for entry := range b.entries[:] {
+			if count := float64(atomic.LoadUint32(&b.entries[entry])); count > 0 {
 				value := base + middleOffset(uint64(bucket), uint64(entry))
 				values += count * value
 				total += count
@@ -212,119 +255,265 @@ func (h *Histogram) Variance() (float64, float64, float64) {
 			}
 		}
 	}
-
-	if total == 0 {
-		return 0, 0, 0
-	}
-	return values, values / total, vari / total
 }
 
 // Percentiles returns calls the callback with information about the CDF.
 // The total may increase during the call, but it should never be less
 // than the count.
 func (h *Histogram) Percentiles(cb func(value, count, total int64)) {
-	acc := int64(0)
+	acc, total := int64(0), h.Total()
 
-	for bucket := range h.counts[:] {
-		b := loadBucket(&h.counts[bucket])
-		if b == nil {
-			continue
+	bm := h.bitmap.Clone()
+	for {
+		bucket, ok := bm.Next()
+		if !ok {
+			return
 		}
 
-		for entry := range b {
-			if count := int64(atomic.LoadInt32(&b[entry])); count > 0 {
+		b := loadBucket(&h.buckets[bucket])
+		for entry := range b.entries[:] {
+			if count := int64(atomic.LoadUint32(&b.entries[entry])); count > 0 {
 				acc += count
-				cb(upperValue(uint64(bucket), uint64(entry)), acc, h.Total())
+				if acc > total {
+					total = h.Total()
+				}
+				cb(upperValue(uint64(bucket), uint64(entry)), acc, total)
 			}
 		}
 	}
 }
 
-// Serialize appends to dst a binary representation of the histogram.
 func (h *Histogram) Serialize(dst []byte) []byte {
-	var le = binary.LittleEndian
+	le := binary.LittleEndian
 
 	if cap(dst) < 128 {
 		dst = make([]byte, 128)
 	}
 
-	// leave room for 2 bytes at the start
-	buf := buffer.Of(dst).Advance(2)
+	buf := buffer.Of(dst)
+	aidx := uintptr(0)
+	buf = buf.Advance(8)
 
-	// TODO(jeff): maybe we want to avoid 464 bytes on the stack
-	// write all the bucket counts and keep track of which counts were set
-	var counts [histBuckets]uint64
-	prev := int32(0)
+	acount := uint8(0)
+	action := uint64(0)
 
-	for bucket := range h.counts[:] {
-		b := loadBucket(&h.counts[bucket])
+	prev := uint32(0)
+	skip := uint32(0)
+
+	prevBucket := ^uint(0)
+
+	bm := h.bitmap.Clone()
+	for {
+		bucket, ok := bm.Next()
+		if !ok {
+			break
+		}
+
+		if delta := bucket - prevBucket; delta > 1 {
+			skip += histEntries * uint32(delta-1)
+		}
+		prevBucket = bucket
+
+		b := h.buckets[bucket]
+		for entry := range b.entries[:] {
+			count := b.entries[entry]
+			if count == 0 {
+				skip++
+				continue
+			}
+
+			buf = buf.Grow()
+
+			if skip > 0 {
+				if acount == 64 {
+					le.PutUint64(buf.Index8(aidx)[:], action)
+					aidx = buf.Pos()
+					buf = buf.Advance(8)
+					acount = 0
+				}
+
+				action = action>>1 | (1 << 63)
+				acount++
+
+				nbytes, enc := varintStats(skip)
+				le.PutUint64(buf.Front()[:], enc)
+				buf = buf.Advance(uintptr(nbytes))
+				skip = 0
+			}
+
+			{
+				if acount == 64 {
+					le.PutUint64(buf.Index8(aidx)[:], action)
+					aidx = buf.Pos()
+					buf = buf.Advance(8)
+					acount = 0
+				}
+
+				action = action >> 1
+				acount++
+
+				delta := int32(count) - int32(prev)
+				val := uint32((delta + delta) ^ (delta >> 31))
+
+				nbytes, enc := varintStats(val)
+				le.PutUint64(buf.Front()[:], enc)
+				buf = buf.Advance(uintptr(nbytes))
+			}
+
+			prev = count
+		}
+	}
+
+	if delta := histBuckets - prevBucket; delta > 1 {
+		skip += histEntries * uint32(delta-1)
+	}
+
+	if skip > 0 {
+		buf = buf.Grow()
+
+		if acount == 64 {
+			le.PutUint64(buf.Index8(aidx)[:], action)
+			aidx = buf.Pos()
+			buf = buf.Advance(8)
+			acount = 0
+		}
+
+		action = action>>1 | (1 << 63)
+		acount++
+
+		nbytes, enc := varintStats(skip)
+		le.PutUint64(buf.Front()[:], enc)
+		buf = buf.Advance(uintptr(nbytes))
+	}
+
+	if acount > 0 {
+		action >>= (64 - acount) % 64
+		le.PutUint64(buf.Index8(aidx)[:], action)
+	}
+
+	return buf.Prefix()
+}
+
+func (h *Histogram) Load(data []byte) (err error) {
+	le := binary.LittleEndian
+	buf := buffer.OfLen(data)
+
+	bi := uint64(0)
+	b := (*histBucket)(nil)
+
+	entry := uint32(0)
+	value := uint32(0)
+
+	for buf.Remaining() > 8 {
+		actions := le.Uint64(buf.Front()[:])
+		buf = buf.Advance(8)
+
+		for i := 0; i < 64; i++ {
+			var dec uint32
+
+			rem := buf.Remaining()
+			if rem == 0 {
+				goto check
+
+			} else if rem >= 8 {
+				var nbytes uint8
+				nbytes, dec = fastVarintConsume(le.Uint64(buf.Front()[:]))
+				buf = buf.Advance(uintptr(nbytes))
+
+			} else {
+				var ok bool
+				dec, buf, ok = safeVarintConsume(buf)
+				if !ok {
+					err = errs.New("invalid varint data")
+					goto done
+				}
+			}
+
+			if actions != 0 && actions&1 == 1 {
+				entry += dec
+				if entry >= histEntries {
+					bi += uint64(entry / histEntries)
+					entry = entry % histEntries
+					b = nil
+				}
+
+			} else {
+				delta := (dec >> 1) ^ -(dec & 1)
+				value += delta
+
+				if b == nil {
+					if bi >= histBuckets {
+						err = errs.New("overflow number of buckets")
+						goto done
+					}
+					b = h.buckets[bi]
+					if b == nil {
+						b = new(histBucket)
+						h.buckets[bi] = b
+						h.bitmap.Set(uint(bi))
+					}
+				}
+
+				b.entries[entry%histEntries] += value
+				entry++
+
+				if entry == histEntries {
+					bi++
+					entry = 0
+					b = nil
+				}
+			}
+
+			actions >>= 1
+		}
+	}
+
+check:
+	if bi != histBuckets || entry != 0 || buf.Remaining() != 0 {
+		err = errs.New("invalid encoded data (%d, %d, %d)", bi, entry, buf.Remaining())
+	}
+
+done:
+	return err
+}
+
+func (h *Histogram) Bitmap() string {
+	var lines []string
+	for bucket := range h.buckets[:] {
+		b := loadBucket(&h.buckets[bucket])
+		if b == nil {
+			lines = append(lines, strings.Repeat("0", histEntries))
+			continue
+		}
+
+		var line []byte
+		for entry := range b.entries[:] {
+			count := atomic.LoadUint32(&b.entries[entry])
+			if count == 0 {
+				line = append(line, '0')
+			} else {
+				line = append(line, '1')
+			}
+		}
+		lines = append(lines, string(line))
+	}
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func (h *Histogram) Dump() {
+	for bucket := range h.buckets[:] {
+		b := loadBucket(&h.buckets[bucket])
 		if b == nil {
 			continue
 		}
 
-		for entry := range b {
-			count := atomic.LoadInt32(&b[entry])
+		for entry := range b.entries[:] {
+			count := atomic.LoadUint32(&b.entries[entry])
 			if count == 0 {
 				continue
 			}
-			counts[bucket] |= 1 << uint(entry)
 
-			delta := count - prev
-			val := uint32(delta<<1) ^ uint32(delta>>31)
-			prev = count
-
-			{ // do a varint append
-				nbytes, val := varintStats(val)
-				buf = buf.Grow()
-				le.PutUint64(buf.Front()[:], val)
-				buf = buf.Advance(uintptr(nbytes))
-			}
+			fmt.Printf("%d:%d\n", lowerValue(uint64(bucket), uint64(entry)), count)
 		}
 	}
-
-	// store the length of the counts at the start of the buffer
-	le.PutUint16((*[2]byte)(buf.Base())[:], uint16(buf.Pos()))
-
-	// write out RLE of bits in counts
-	flip := false
-	numZero := 0
-
-nextCount:
-	for _, v := range &counts {
-		valZero := 0
-		if flip {
-			v = ^v
-		}
-
-		for {
-			zero := bits.TrailingZeros64(v)
-			valZero += zero
-			numZero += zero
-
-			if valZero >= 64 {
-				numZero -= valZero - 64
-				continue nextCount
-			}
-
-			{ // do a varint append
-				nbytes, val := varintStats(uint32(numZero))
-				buf = buf.Grow()
-				le.PutUint64(buf.Front()[:], val)
-				buf = buf.Advance(uintptr(nbytes))
-			}
-
-			numZero = 0
-			flip = !flip
-			v = ^v >> (uint(zero) % 64)
-		}
-	}
-
-	{ // do a varint append
-		nbytes, val := varintStats(uint32(numZero))
-		buf = buf.Grow()
-		le.PutUint64(buf.Front()[:], val)
-		buf = buf.Advance(uintptr(nbytes))
-	}
-
-	return buf.Prefix()
 }

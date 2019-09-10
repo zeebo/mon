@@ -1,7 +1,6 @@
 package buffer
 
 import (
-	"encoding/binary"
 	"unsafe"
 )
 
@@ -9,14 +8,10 @@ import (
 // custom slice support :sonic:
 //
 
-const buffMax = 1 << 30
-
 type (
 	ptr  = unsafe.Pointer
 	uptr = uintptr
 )
-
-var le = binary.LittleEndian
 
 type T struct {
 	base ptr
@@ -29,6 +24,14 @@ func Of(n []byte) T {
 		base: *(*ptr)(ptr(&n)),
 		pos:  0,
 		cap:  uptr(cap(n)),
+	}
+}
+
+func OfLen(n []byte) T {
+	return T{
+		base: *(*ptr)(ptr(&n)),
+		pos:  0,
+		cap:  uptr(len(n)),
 	}
 }
 
@@ -71,7 +74,20 @@ func (buf T) Grow() T {
 	return buf
 }
 
+func (buf T) Index(n uintptr) *byte {
+	return (*byte)(ptr(uptr(buf.base) + n))
+}
+
+func (buf T) Index8(n uintptr) *[8]byte {
+	return (*[8]byte)(ptr(uptr(buf.base) + n))
+}
+
 func (buf T) Advance(n uptr) T {
 	buf.pos += n
+	return buf
+}
+
+func (buf T) Retreat(n uptr) T {
+	buf.pos -= n
 	return buf
 }

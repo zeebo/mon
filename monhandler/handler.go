@@ -1,9 +1,11 @@
 package monhandler
 
 import (
+	"bytes"
 	"fmt"
 	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,12 +21,12 @@ func (Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprintln(w, `<meta charset="UTF-8">`)
 		fmt.Fprintln(w, "<table border=1>")
-		fmt.Fprintln(w, "<tr><td>name</td><td>current</td><td>total</td><td>sum</td><td>average</td><td>variance</td><td>stddev</td></tr>")
+		fmt.Fprintln(w, "<tr><td>name</td><td>total</td><td>sum</td><td>average</td><td>variance</td><td>stddev</td></tr>")
 		mon.Times(func(name string, st *mon.State) bool {
-			current, total := st.Current(), st.Total()
+			total := st.Total()
 			sum, avg, vari := st.Variance()
-			fmt.Fprintf(w, `<tr><td><a href="%[1]s">%[1]s</a></td><td>%d</td><td>%d</td><td>%v</td><td>%v</td><td>%v</td><td>%v</td></tr>`,
-				name, current, total, time.Duration(sum), time.Duration(avg), time.Duration(vari), time.Duration(math.Sqrt(vari)))
+			fmt.Fprintf(w, `<tr><td><a href="%[1]s">%[1]s</a></td><td>%d</td><td>%v</td><td>%v</td><td>%v</td><td>%v</td></tr>`,
+				name, total, time.Duration(sum), time.Duration(avg), time.Duration(vari), time.Duration(math.Sqrt(vari)))
 			return true
 		})
 		return
@@ -35,9 +37,35 @@ func (Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
+	his := state.Histogram()
 
-	w.Header().Set("Content-Type", "image/svg+xml")
-	makeChart(state.Histogram()).Render(chart.SVG, w)
+	width, height, pow := 1300, 300, -1
+	if qpow, err := strconv.ParseInt(req.URL.Query().Get("pow"), 10, 0); err == nil {
+		pow = int(qpow)
+	}
+	if qwidth, err := strconv.ParseInt(req.URL.Query().Get("width"), 10, 0); err == nil {
+		width = int(qwidth)
+	}
+	if qheight, err := strconv.ParseInt(req.URL.Query().Get("height"), 10, 0); err == nil {
+		height = int(qheight)
+	}
+
+	var buf bytes.Buffer
+	_ = makeChart(his, width, height, pow).Render(chart.SVG, &buf)
+
+	w.Header().Set("Content-Type", chart.ContentTypeSVG)
+	_, _ = w.Write(fixupViewbox(buf.Bytes(), width, height))
+}
+
+func fixupViewbox(data []byte, width, height int) []byte {
+	parts := bytes.SplitN(data, []byte(">"), 2)
+	if len(parts) != 2 {
+		return data
+	}
+	return append(append(
+		parts[0],
+		fmt.Sprintf(` viewBox="-0.5 -0.5 %d %d">`, width, height)...),
+		parts[1]...)
 }
 
 func getLabel(i int) string {
@@ -53,38 +81,70 @@ func getLabel(i int) string {
 	}
 }
 
-func makeChart(his *mon.Histogram) *chart.Chart {
+func makeChart(his *mon.Histogram, width, height, pow int) *chart.Chart {
 	var x, y []float64
 	var t float64
 
+	largest := 1.0
+	if pow > 0 {
+		largest = 1.0 - math.Pow(0.1, float64(pow))
+	}
+
 	his.Percentiles(func(value, count, total int64) {
-		t = float64(total)
-		x = append(x, float64(count)/t)
-		y = append(y, float64(value))
+		ptile := float64(count) / float64(total)
+		if ptile <= largest {
+			t = float64(total)
+			x = append(x, ptile)
+			y = append(y, float64(value))
+		}
 	})
 
 	// make a log axis
-	var p int
-	for ti := t; ti >= 1; ti /= 10 {
-		p++
+	if pow <= 0 {
+		pow = 0
+		for ti := t; ti >= 1; ti /= 10 {
+			pow++
+		}
 	}
 
 	var xticks []chart.Tick
 	var xgrids []chart.GridLine
-	for i := 0; i < p; i++ {
+	for i := 0; i < pow; i++ {
+		if i > 0 {
+			xgrids = append(xgrids, chart.GridLine{Value: float64(i)})
+		}
 		xticks = append(xticks, chart.Tick{
 			Value: float64(i),
 			Label: getLabel(i),
 		})
-		xgrids = append(xgrids, chart.GridLine{
-			Value: float64(i),
-		})
+		if i == 0 {
+			med := math.Log10(2)
+			xgrids = append(xgrids, chart.GridLine{Value: med})
+			xticks = append(xticks, chart.Tick{
+				Value: med,
+				Label: "50%",
+			})
+
+			quart := math.Log10(4)
+			xgrids = append(xgrids, chart.GridLine{Value: quart})
+			xticks = append(xticks, chart.Tick{
+				Value: quart,
+				Label: "75%",
+			})
+		}
 	}
+
+	// always add the largest grid line
+	xgrids = append(xgrids, chart.GridLine{Value: float64(pow)})
+	xticks = append(xticks, chart.Tick{
+		Value: float64(pow),
+		Label: getLabel(pow),
+	})
 
 	// log scale the x axis
 	for i, v := range x {
 		if v == 1 {
-			x[i] = float64(p)
+			x[i] = float64(pow)
 		} else {
 			x[i] = math.Log10(1 / (1 - v))
 		}
@@ -97,30 +157,35 @@ func makeChart(his *mon.Histogram) *chart.Chart {
 	}
 
 	return &chart.Chart{
+		Width:  width,
+		Height: height,
 		XAxis: chart.XAxis{
-			NameStyle:      chart.StyleShow(),
+			NameStyle: chart.StyleShow(),
+			Ticks:     xticks,
+			GridLines: xgrids,
+
 			Style:          chart.StyleShow(),
-			Ticks:          xticks,
-			TickStyle:      chart.StyleShow(),
-			GridLines:      xgrids,
+			TickStyle:      gridStyle,
 			GridMajorStyle: gridStyle,
 		},
 		YAxis: chart.YAxis{
-			AxisType:       chart.YAxisSecondary,
-			NameStyle:      chart.StyleShow(),
-			Style:          chart.StyleShow(),
-			GridMajorStyle: gridStyle,
-			GridMinorStyle: gridStyle,
+			AxisType:  chart.YAxisSecondary,
+			NameStyle: chart.StyleShow(),
 			ValueFormatter: func(x interface{}) string {
 				return time.Duration(int64(x.(float64))).String()
 			},
+
+			Style:          chart.StyleShow(),
+			TickStyle:      gridStyle,
+			GridMinorStyle: gridStyle,
+			GridMajorStyle: gridStyle,
 		},
 		Series: []chart.Series{
 			chart.ContinuousSeries{
 				Style: chart.Style{
 					Show:        true,
 					StrokeColor: chart.GetDefaultColor(0),
-					StrokeWidth: 2,
+					StrokeWidth: 3,
 				},
 				XValues: x,
 				YValues: y,
