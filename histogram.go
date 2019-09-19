@@ -17,11 +17,13 @@ import (
 //go:noescape
 func sumHistogramAVX2(*[64]uint32) uint64
 
+// sumHistogram is either backed by AVX2 or a partially unrolled loop.
 var sumHistogram = map[bool]func(*[64]uint32) uint64{
 	true:  sumHistogramAVX2,
 	false: sumHistogramSlow,
 }[cpu.X86.HasAVX2]
 
+// sumHistogramSlow sums the histogram buffers using an unrolled loop.
 func sumHistogramSlow(buf *[64]uint32) (total uint64) {
 	for i := 0; i <= 56; i += 8 {
 		total += uint64(buf[i+0])
@@ -84,7 +86,7 @@ func middleOffset(bucket, entry uint64) float64 {
 func bucketEntry(v int64) (bucket, entry uint64) {
 	uv := uint64(v + histEntries)
 	bucket = uint64(bits.Len64(uv)) - histEntriesBits - 1
-	return bucket, uv>>bucket - histEntries
+	return bucket % 64, (uv>>bucket - histEntries) % histEntries
 }
 
 // Histogram keeps track of an exponentially increasing range of buckets
@@ -102,25 +104,18 @@ func (h *Histogram) Observe(v int64) {
 	}
 
 	bucket, entry := bucketEntry(v)
-	if bucket < histBuckets && entry < histEntries {
-		b := loadBucket(&h.buckets[bucket])
-		if b == nil {
-			b = h.makeBucket(bucket)
-		}
-		atomic.AddUint32(&b.entries[entry], 1)
-	}
-}
 
-// makeBucket ensures the bucket exists and returns it.
-func (h *Histogram) makeBucket(bucket uint64) *histBucket {
-	addr := &h.buckets[bucket%64]
-	b := new(histBucket)
-	if !casBucket(addr, nil, b) {
-		b = loadBucket(addr)
-	} else {
-		h.bitmap.Set(uint(bucket))
+	b := loadBucket(&h.buckets[bucket])
+	if b == nil {
+		b = new(histBucket)
+		if !casBucket(&h.buckets[bucket], nil, b) {
+			b = loadBucket(&h.buckets[bucket])
+		} else {
+			h.bitmap.Set(uint(bucket))
+		}
 	}
-	return b
+
+	atomic.AddUint32(&b.entries[entry], 1)
 }
 
 // Total returns the number of completed calls.

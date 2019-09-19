@@ -176,10 +176,50 @@ func BenchmarkHistogram(b *testing.B) {
 		})
 	})
 
+	b.Run("Total", func(b *testing.B) {
+		his := new(Histogram)
+		for i := 0; i < 1000000; i++ {
+			his.Observe(int64(pcg.Uint64() >> histEntriesBits))
+		}
+		b.ReportAllocs()
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			his.Total()
+		}
+	})
+
+	b.Run("Total_Easy", func(b *testing.B) {
+		his := new(Histogram)
+		for i := 0; i < 1000000; i++ {
+			his.Observe(int64(pcg.Uint32n(64)))
+		}
+		b.ReportAllocs()
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			his.Total()
+		}
+	})
+
 	b.Run("Quantile", func(b *testing.B) {
 		his := new(Histogram)
 		for i := 0; i < 1000000; i++ {
 			his.Observe(int64(pcg.Uint64() >> histEntriesBits))
+		}
+		assert.Equal(b, his.Total(), 1000000)
+		b.ReportAllocs()
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			his.Quantile(pcg.Float64())
+		}
+	})
+
+	b.Run("Quantile_Easy", func(b *testing.B) {
+		his := new(Histogram)
+		for i := 0; i < 1000000; i++ {
+			his.Observe(int64(pcg.Uint32n(64)))
 		}
 		assert.Equal(b, his.Total(), 1000000)
 		b.ReportAllocs()

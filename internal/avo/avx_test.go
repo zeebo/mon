@@ -44,6 +44,30 @@ func BenchmarkInline(b *testing.B) {
 	}
 }
 
+func BenchmarkInlineUnroll8Shard(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		var totals [8]uint64
+		for j := 0; j <= 56; j += 8 {
+			totals[0] += uint64(buf[j+0])
+			totals[1] += uint64(buf[j+1])
+			totals[2] += uint64(buf[j+2])
+			totals[3] += uint64(buf[j+3])
+			totals[4] += uint64(buf[j+4])
+			totals[5] += uint64(buf[j+5])
+			totals[6] += uint64(buf[j+6])
+			totals[7] += uint64(buf[j+7])
+		}
+		hole += totals[0]
+		hole += totals[1]
+		hole += totals[2]
+		hole += totals[3]
+		hole += totals[4]
+		hole += totals[5]
+		hole += totals[6]
+		hole += totals[7]
+	}
+}
+
 func BenchmarkInlineUnroll8(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		for j := 0; j <= 56; j += 8 {
