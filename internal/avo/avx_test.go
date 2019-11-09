@@ -4,27 +4,35 @@ package avo
 
 import (
 	"testing"
+	"unsafe"
 
 	"github.com/zeebo/pcg"
 )
 
+const size = 64
+
 var (
 	hole uint64
-	buf  [64]uint32
+	buf  [size]uint64
 )
 
 //go:noescape
-func sum_histogram(*[64]uint32) uint64
+func sum_histogram64(*[size]uint64) uint64
 
 func TestAVX(t *testing.T) {
 	for i := 0; i < 1000; i++ {
 		total := uint64(0)
 		for j := range buf {
-			buf[j] = pcg.Uint32()
+			buf[j] = pcg.Uint64()
 			total += uint64(buf[j])
 		}
 
-		if sum_histogram(&buf) != total {
+		if sum_histogram64(&buf) != total ||
+			sum64(&buf) != total ||
+			sum64_unroll(&buf) != total ||
+			sum64_unroll_pointer(&buf) != total ||
+			sum64_unroll_full(&buf) != total {
+
 			t.Fatal("wrong answer")
 		}
 	}
@@ -32,129 +40,150 @@ func TestAVX(t *testing.T) {
 
 func BenchmarkAVX(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		hole += sum_histogram(&buf)
+		hole += sum_histogram64(&buf)
 	}
 }
 
-func BenchmarkInline(b *testing.B) {
+func BenchmarkGo(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		for _, v := range buf {
-			hole += uint64(v)
-		}
+		hole += sum64(&buf)
 	}
 }
 
-func BenchmarkInlineUnroll8Shard(b *testing.B) {
+func sum64(buf *[size]uint64) (tmp uint64) {
+	for _, v := range buf {
+		tmp += uint64(v)
+	}
+	return tmp
+}
+
+func BenchmarkGoUnroll(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		var totals [8]uint64
-		for j := 0; j <= 56; j += 8 {
-			totals[0] += uint64(buf[j+0])
-			totals[1] += uint64(buf[j+1])
-			totals[2] += uint64(buf[j+2])
-			totals[3] += uint64(buf[j+3])
-			totals[4] += uint64(buf[j+4])
-			totals[5] += uint64(buf[j+5])
-			totals[6] += uint64(buf[j+6])
-			totals[7] += uint64(buf[j+7])
-		}
-		hole += totals[0]
-		hole += totals[1]
-		hole += totals[2]
-		hole += totals[3]
-		hole += totals[4]
-		hole += totals[5]
-		hole += totals[6]
-		hole += totals[7]
+		hole += sum64_unroll(&buf)
 	}
 }
 
-func BenchmarkInlineUnroll8(b *testing.B) {
+func sum64_unroll(buf *[size]uint64) (tmp uint64) {
+	for j := 0; j <= size-8; j += 8 {
+		tmp += uint64(buf[j+0])
+		tmp += uint64(buf[j+1])
+		tmp += uint64(buf[j+2])
+		tmp += uint64(buf[j+3])
+		tmp += uint64(buf[j+4])
+		tmp += uint64(buf[j+5])
+		tmp += uint64(buf[j+6])
+		tmp += uint64(buf[j+7])
+	}
+	return tmp
+}
+
+func BenchmarkGoUnrollPointer(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		for j := 0; j <= 56; j += 8 {
-			hole += uint64(buf[j+0])
-			hole += uint64(buf[j+1])
-			hole += uint64(buf[j+2])
-			hole += uint64(buf[j+3])
-			hole += uint64(buf[j+4])
-			hole += uint64(buf[j+5])
-			hole += uint64(buf[j+6])
-			hole += uint64(buf[j+7])
-		}
+		hole += sum64_unroll_pointer(&buf)
 	}
 }
 
-func BenchmarkInlineUnroll64(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		hole += uint64(buf[0+0])
-		hole += uint64(buf[0+1])
-		hole += uint64(buf[0+2])
-		hole += uint64(buf[0+3])
-		hole += uint64(buf[0+4])
-		hole += uint64(buf[0+5])
-		hole += uint64(buf[0+6])
-		hole += uint64(buf[0+7])
+func sum64_unroll_pointer(buf *[size]uint64) (tmp uint64) {
+	base := unsafe.Pointer(&buf[0])
+	j := 0
 
-		hole += uint64(buf[1*8+0])
-		hole += uint64(buf[1*8+1])
-		hole += uint64(buf[1*8+2])
-		hole += uint64(buf[1*8+3])
-		hole += uint64(buf[1*8+4])
-		hole += uint64(buf[1*8+5])
-		hole += uint64(buf[1*8+6])
-		hole += uint64(buf[1*8+7])
+next:
+	tmp += *(*uint64)(unsafe.Pointer(uintptr(base) + 0*8))
+	tmp += *(*uint64)(unsafe.Pointer(uintptr(base) + 1*8))
+	tmp += *(*uint64)(unsafe.Pointer(uintptr(base) + 2*8))
+	tmp += *(*uint64)(unsafe.Pointer(uintptr(base) + 3*8))
+	tmp += *(*uint64)(unsafe.Pointer(uintptr(base) + 4*8))
+	tmp += *(*uint64)(unsafe.Pointer(uintptr(base) + 5*8))
+	tmp += *(*uint64)(unsafe.Pointer(uintptr(base) + 6*8))
+	tmp += *(*uint64)(unsafe.Pointer(uintptr(base) + 7*8))
 
-		hole += uint64(buf[2*8+0])
-		hole += uint64(buf[2*8+1])
-		hole += uint64(buf[2*8+2])
-		hole += uint64(buf[2*8+3])
-		hole += uint64(buf[2*8+4])
-		hole += uint64(buf[2*8+5])
-		hole += uint64(buf[2*8+6])
-		hole += uint64(buf[2*8+7])
-
-		hole += uint64(buf[3*8+0])
-		hole += uint64(buf[3*8+1])
-		hole += uint64(buf[3*8+2])
-		hole += uint64(buf[3*8+3])
-		hole += uint64(buf[3*8+4])
-		hole += uint64(buf[3*8+5])
-		hole += uint64(buf[3*8+6])
-		hole += uint64(buf[3*8+7])
-
-		hole += uint64(buf[4*8+0])
-		hole += uint64(buf[4*8+1])
-		hole += uint64(buf[4*8+2])
-		hole += uint64(buf[4*8+3])
-		hole += uint64(buf[4*8+4])
-		hole += uint64(buf[4*8+5])
-		hole += uint64(buf[4*8+6])
-		hole += uint64(buf[4*8+7])
-
-		hole += uint64(buf[5*8+0])
-		hole += uint64(buf[5*8+1])
-		hole += uint64(buf[5*8+2])
-		hole += uint64(buf[5*8+3])
-		hole += uint64(buf[5*8+4])
-		hole += uint64(buf[5*8+5])
-		hole += uint64(buf[5*8+6])
-		hole += uint64(buf[5*8+7])
-
-		hole += uint64(buf[6*8+0])
-		hole += uint64(buf[6*8+1])
-		hole += uint64(buf[6*8+2])
-		hole += uint64(buf[6*8+3])
-		hole += uint64(buf[6*8+4])
-		hole += uint64(buf[6*8+5])
-		hole += uint64(buf[6*8+6])
-		hole += uint64(buf[6*8+7])
-
-		hole += uint64(buf[7*8+0])
-		hole += uint64(buf[7*8+1])
-		hole += uint64(buf[7*8+2])
-		hole += uint64(buf[7*8+3])
-		hole += uint64(buf[7*8+4])
-		hole += uint64(buf[7*8+5])
-		hole += uint64(buf[7*8+6])
-		hole += uint64(buf[7*8+7])
+	if j < 8 {
+		j++
+		base = unsafe.Pointer(uintptr(base) + 64)
+		goto next
 	}
+
+	return tmp
+}
+
+func BenchmarkGoUnrollFull(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		hole += sum64_unroll_full(&buf)
+	}
+}
+
+func sum64_unroll_full(buf *[size]uint64) (tmp uint64) {
+	tmp += uint64(buf[0+0])
+	tmp += uint64(buf[0+1])
+	tmp += uint64(buf[0+2])
+	tmp += uint64(buf[0+3])
+	tmp += uint64(buf[0+4])
+	tmp += uint64(buf[0+5])
+	tmp += uint64(buf[0+6])
+	tmp += uint64(buf[0+7])
+
+	tmp += uint64(buf[1*8+0])
+	tmp += uint64(buf[1*8+1])
+	tmp += uint64(buf[1*8+2])
+	tmp += uint64(buf[1*8+3])
+	tmp += uint64(buf[1*8+4])
+	tmp += uint64(buf[1*8+5])
+	tmp += uint64(buf[1*8+6])
+	tmp += uint64(buf[1*8+7])
+
+	tmp += uint64(buf[2*8+0])
+	tmp += uint64(buf[2*8+1])
+	tmp += uint64(buf[2*8+2])
+	tmp += uint64(buf[2*8+3])
+	tmp += uint64(buf[2*8+4])
+	tmp += uint64(buf[2*8+5])
+	tmp += uint64(buf[2*8+6])
+	tmp += uint64(buf[2*8+7])
+
+	tmp += uint64(buf[3*8+0])
+	tmp += uint64(buf[3*8+1])
+	tmp += uint64(buf[3*8+2])
+	tmp += uint64(buf[3*8+3])
+	tmp += uint64(buf[3*8+4])
+	tmp += uint64(buf[3*8+5])
+	tmp += uint64(buf[3*8+6])
+	tmp += uint64(buf[3*8+7])
+
+	tmp += uint64(buf[4*8+0])
+	tmp += uint64(buf[4*8+1])
+	tmp += uint64(buf[4*8+2])
+	tmp += uint64(buf[4*8+3])
+	tmp += uint64(buf[4*8+4])
+	tmp += uint64(buf[4*8+5])
+	tmp += uint64(buf[4*8+6])
+	tmp += uint64(buf[4*8+7])
+
+	tmp += uint64(buf[5*8+0])
+	tmp += uint64(buf[5*8+1])
+	tmp += uint64(buf[5*8+2])
+	tmp += uint64(buf[5*8+3])
+	tmp += uint64(buf[5*8+4])
+	tmp += uint64(buf[5*8+5])
+	tmp += uint64(buf[5*8+6])
+	tmp += uint64(buf[5*8+7])
+
+	tmp += uint64(buf[6*8+0])
+	tmp += uint64(buf[6*8+1])
+	tmp += uint64(buf[6*8+2])
+	tmp += uint64(buf[6*8+3])
+	tmp += uint64(buf[6*8+4])
+	tmp += uint64(buf[6*8+5])
+	tmp += uint64(buf[6*8+6])
+	tmp += uint64(buf[6*8+7])
+
+	tmp += uint64(buf[7*8+0])
+	tmp += uint64(buf[7*8+1])
+	tmp += uint64(buf[7*8+2])
+	tmp += uint64(buf[7*8+3])
+	tmp += uint64(buf[7*8+4])
+	tmp += uint64(buf[7*8+5])
+	tmp += uint64(buf[7*8+6])
+	tmp += uint64(buf[7*8+7])
+
+	return tmp
 }

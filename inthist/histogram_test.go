@@ -1,4 +1,4 @@
-package mon
+package inthist
 
 import (
 	"encoding/binary"
@@ -130,8 +130,8 @@ func TestHistogram(t *testing.T) {
 			r := int64(pcg.Uint32n(100) + 500)
 			h.Observe(r)
 		}
-		h.Observe(1)
-		h.Observe(3)
+		// h.Observe(1)
+		// h.Observe(3)
 		h.Observe(5)
 
 		data := h.Serialize(nil)
@@ -287,6 +287,8 @@ func BenchmarkHistogram(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			h.Serialize(buf[:0])
 		}
+
+		b.ReportMetric(float64(len(buf)), "bytes")
 	})
 
 	b.Run("Load", func(b *testing.B) {
@@ -304,5 +306,7 @@ func BenchmarkHistogram(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			_ = h.Load(buf)
 		}
+
+		b.ReportMetric(float64(len(buf)), "bytes")
 	})
 }

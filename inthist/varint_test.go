@@ -1,4 +1,4 @@
-package mon
+package inthist
 
 import (
 	"encoding/binary"
@@ -8,6 +8,7 @@ import (
 
 	"github.com/zeebo/assert"
 	"github.com/zeebo/mon/internal/buffer"
+	"github.com/zeebo/pcg"
 )
 
 func TestVarint(t *testing.T) {
@@ -50,6 +51,19 @@ func TestVarint(t *testing.T) {
 func BenchmarkVarint(b *testing.B) {
 	var le = binary.LittleEndian
 
+	randVals := make([]uint32, 1024*1024)
+	for i := range randVals {
+		randVals[i] = uint32(1<<pcg.Uint32n(32) - 1)
+	}
+	randBuf := buffer.Of(make([]byte, 16))
+	for _, val := range randVals {
+		nbytes, enc := varintStats(val)
+		randBuf = randBuf.Grow()
+		le.PutUint64(randBuf.Front()[:], enc)
+		randBuf = randBuf.Advance(uintptr(nbytes))
+	}
+	randBuf = randBuf.Reset()
+
 	b.Run("Stats", func(b *testing.B) {
 		for _, i := range []uint{1, 32} {
 			b.Run(fmt.Sprint(i), func(b *testing.B) {
@@ -64,6 +78,16 @@ func BenchmarkVarint(b *testing.B) {
 				runtime.KeepAlive(y)
 			})
 		}
+
+		b.Run("Rand", func(b *testing.B) {
+			var x uint8
+			var y uint64
+			for i := 0; i < b.N; i++ {
+				x, y = varintStats(randVals[i%(1024*1024)])
+			}
+			runtime.KeepAlive(x)
+			runtime.KeepAlive(y)
+		})
 	})
 
 	b.Run("Append", func(b *testing.B) {
@@ -79,6 +103,16 @@ func BenchmarkVarint(b *testing.B) {
 				}
 			})
 		}
+
+		b.Run("Rand", func(b *testing.B) {
+			buf := buffer.Of(make([]byte, 16))
+
+			for i := 0; i < b.N; i++ {
+				_, val := varintStats(randVals[i%(1024*1024)])
+				buf = buf.Grow()
+				le.PutUint64(buf.Front()[:], val)
+			}
+		})
 	})
 
 	b.Run("Consume", func(b *testing.B) {
@@ -97,6 +131,16 @@ func BenchmarkVarint(b *testing.B) {
 				}
 			})
 		}
+
+		b.Run("Rand", func(b *testing.B) {
+			buf := randBuf.Reset()
+			for i := 0; i < b.N; i++ {
+				if buf.Remaining() == 0 {
+					buf = buf.Reset()
+				}
+				_, buf, _ = safeVarintConsume(buf)
+			}
+		})
 	})
 
 	b.Run("FastConsume", func(b *testing.B) {
@@ -117,5 +161,16 @@ func BenchmarkVarint(b *testing.B) {
 				runtime.KeepAlive(dec)
 			})
 		}
+
+		b.Run("Rand", func(b *testing.B) {
+			buf := randBuf.Reset()
+			for i := 0; i < b.N; i++ {
+				if buf.Remaining() < 8 {
+					buf = buf.Reset()
+				}
+				nbytes, _ := fastVarintConsume(le.Uint64(buf.Front()[:]))
+				buf = buf.Advance(uintptr(nbytes))
+			}
+		})
 	})
 }

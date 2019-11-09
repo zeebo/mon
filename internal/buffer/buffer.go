@@ -43,6 +43,11 @@ func (buf T) Pos() uptr {
 	return buf.pos
 }
 
+func (buf T) SetPos(pos uintptr) T {
+	buf.pos = pos
+	return buf
+}
+
 func (buf T) Prefix() []byte {
 	return *(*[]byte)(unsafe.Pointer(&buf))
 }
@@ -72,6 +77,20 @@ func (buf T) Grow() T {
 		buf.base = *(*ptr)(ptr(&n))
 	}
 	return buf
+}
+
+func (buf T) GrowN(n uintptr) T {
+	if rem := buf.Remaining(); rem < n {
+		buf.cap *= 2
+		n := make([]byte, buf.cap)
+		copy(n, buf.Prefix())
+		buf.base = *(*ptr)(ptr(&n))
+	}
+	return buf
+}
+
+func (buf T) Head() *byte {
+	return (*byte)(ptr(uptr(buf.base) + buf.pos))
 }
 
 func (buf T) Index(n uintptr) *byte {

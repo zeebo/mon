@@ -6,6 +6,7 @@ import (
 	"unsafe"
 
 	"github.com/zeebo/mon/internal/lfht"
+	"github.com/zeebo/mon/inthist"
 	"github.com/zeebo/swaparoo"
 )
 
@@ -21,7 +22,7 @@ func newCounter() unsafe.Pointer { return unsafe.Pointer(new(int64)) }
 // State keeps track of all of the timer information for some calls.
 type State struct {
 	errors lfht.Table
-	his    Histogram
+	his    inthist.Histogram
 }
 
 // Times calls the callback with all of the histograms that have been captured.
@@ -78,7 +79,7 @@ func (s *State) done(v int64, kind string) {
 }
 
 // Histogram returns the Histogram associated with the state.
-func (s *State) Histogram() *Histogram { return &s.his }
+func (s *State) Histogram() *inthist.Histogram { return &s.his }
 
 // Errors returns a tree of error counters. Be sure to use atomic.LoadInt64 on the results.
 func (s *State) Errors() *lfht.Table { return &s.errors }

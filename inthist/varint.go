@@ -1,4 +1,4 @@
-package mon
+package inthist
 
 import (
 	"encoding/binary"
@@ -12,21 +12,13 @@ import (
 //
 
 func varintStats(val uint32) (nbytes uint8, enc uint64) {
-	switch {
-	case val < 1<<7:
-		return 1, uint64(val)<<1 | 0
-	case val < 1<<14:
-		return 2, uint64(val)<<2 | 1
-	case val < 1<<21:
-		return 3, uint64(val)<<3 | 3
-	case val < 1<<28:
-		return 4, uint64(val)<<4 | 7
-	default:
-		return 5, uint64(val)<<5 | 15
+	if val == 0 {
+		return 1, 0
 	}
+	nbytes = (uint8(bits.Len32(val)) - 1) / 7
+	return nbytes + 1, (2*uint64(val)+1)<<(nbytes%64) - 1
 }
 
-//go:noinline
 func fastVarintConsume(val uint64) (nbytes uint8, dec uint32) {
 	nbytes = uint8(bits.TrailingZeros8(^uint8(val)) + 1)
 	val <<= (64 - 8*nbytes) % 64

@@ -375,8 +375,6 @@ func dumpPointer(indent string, p ptr) {
 		if !tagged(p) {
 			dumpPointer(indent+dumpIndent, load(&n.next))
 		}
-		// } else {
-		// 	fmt.Printf("%snil\n", indent)
 	}
 }
 
