@@ -6,19 +6,19 @@ import (
 	"unsafe"
 )
 
-const maxInlined = bits.UintSize/4 - 1
+const MaxInlined = bits.UintSize/4 - 1
 
 type T struct {
 	// declared this way so that we can inline Uint56 LOL
-	Data *[maxInlined]byte
+	Data *[MaxInlined]byte
 	Len  int8
-	Rem  [maxInlined]byte
+	Rem  [MaxInlined]byte
 }
 
 func FromBytes(data []byte) T {
 	if data == nil {
 		return T{}
-	} else if len(data) > maxInlined {
+	} else if len(data) > MaxInlined {
 		return *(*T)(unsafe.Pointer(&data))
 	} else {
 		return inline(data)
@@ -26,7 +26,7 @@ func FromBytes(data []byte) T {
 }
 
 func FromString(data string) T {
-	if data := stringToBytes(data); len(data) > maxInlined {
+	if data := stringToBytes(data); len(data) > MaxInlined {
 		return *(*T)(unsafe.Pointer(&data))
 	} else {
 		return inline(data)

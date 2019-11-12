@@ -1,6 +1,6 @@
-/analysis.log
+analysis.log
 /.vscode
-/*.pprof
-/*.test
-/*.txt
+*.pprof
+*.test
+*.txt
 /vendor
