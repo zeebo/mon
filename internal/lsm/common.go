@@ -9,6 +9,15 @@ import (
 	"github.com/zeebo/errs"
 )
 
+// we want to support 64 bit sets persisted to disk. an update to a bitset requiring
+// reading the old, updating, and writing the new value is probably really expensive.
+// instead, we take a page from roaring bitmaps and store bitsets as partitioned keys.
+// in other words, we store `0xaa...aabb..bb` for key `k` as `k/0xaa..aa` and insert
+// bb..bb into that bitmap. this should work out because we know that ids will be
+// smallish, and we size the bitmaps so that they're all less than 4k so we're
+// at most reading/writing a page anyway. write amplification is still a concern, but
+// we care less because we have so much write i/o available in the intended application.
+
 //
 // inline ptr
 //
