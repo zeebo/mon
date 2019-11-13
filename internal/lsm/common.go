@@ -21,29 +21,33 @@ func newInlinePtrBytes(data []byte) (i inlinePtr) {
 	}
 
 	binary.LittleEndian.PutUint16(i[1:3], uint16(len(data)))
+	var buf []byte
 
 	if len(data) > 13 {
-		copy(i[3:5], data)
+		buf = i[3:5]
 		i[0] = 1
 	} else {
-		copy(i[3:16], data)
+		buf = i[3:16]
 		i[0] = 2
 	}
 
+	copy(buf, data)
 	return i
 }
 
 func newInlinePtrString(data string) (i inlinePtr) {
 	binary.LittleEndian.PutUint16(i[1:3], uint16(len(data)))
+	var buf []byte
 
 	if len(data) > 13 {
-		copy(i[3:5], data)
+		buf = i[3:5]
 		i[0] = 1
 	} else {
-		copy(i[3:16], data)
+		buf = i[3:16]
 		i[0] = 2
 	}
 
+	copy(buf, data)
 	return i
 }
 
