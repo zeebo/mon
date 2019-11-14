@@ -1,70 +1,75 @@
 package lsm
 
 import (
-	"io"
+	"os"
 
 	"github.com/zeebo/mon/internal/inlbytes"
 )
 
-type WriteFlusher interface {
-	io.Writer
-	Flush() error
-}
-
-type WAL struct {
+type wal struct {
 	len uint64
 	cap uint64
-	wf  WriteFlusher
+	fh  *os.File
 }
 
-func NewWAL(wf WriteFlusher, cap uint64) *WAL {
-	var w WAL
-	return newWal(&w, wf, cap)
+func newWAL(fh *os.File, cap uint64) *wal {
+	var w wal
+	initWal(&w, fh, cap)
+	return &w
 }
 
-func NewWALUnsafe(w io.Writer, cap uint64) *WAL {
-	return NewWAL(noopFlusher{w}, cap)
-}
-
-func newWal(w *WAL, wf WriteFlusher, cap uint64) *WAL {
-	w.wf = wf
+func initWal(w *wal, fh *os.File, cap uint64) {
+	w.fh = fh
 	w.cap = cap
-	return w
 }
 
-func (w *WAL) Len() uint64 { return w.len }
-func (w *WAL) Cap() uint64 { return w.cap }
+func (w *wal) Len() uint64 { return w.len }
+func (w *wal) Cap() uint64 { return w.cap }
 
-func (w *WAL) AddString(key string, value []byte) (bool, error) {
+func (w *wal) AddString(key string, value []byte) (bool, error) {
 	return w.writeInline(inlbytes.FromString(key), inlbytes.FromBytes(value))
 }
 
-func (w *WAL) AddBytes(key []byte, value []byte) (bool, error) {
+func (w *wal) AddBytes(key []byte, value []byte) (bool, error) {
 	return w.writeInline(inlbytes.FromBytes(key), inlbytes.FromBytes(value))
 }
 
-func (w *WAL) DelString(key string) (bool, error) {
+func (w *wal) DelString(key string) (bool, error) {
 	return w.writeInline(inlbytes.FromString(key), inlbytes.T{})
 }
 
-func (w *WAL) DelBytes(key []byte) (bool, error) {
+func (w *wal) DelBytes(key []byte) (bool, error) {
 	return w.writeInline(inlbytes.FromBytes(key), inlbytes.T{})
 }
 
-func (w *WAL) writeInline(key, value inlbytes.T) (bool, error) {
+func (w *wal) writeInline(key, value inlbytes.T) (bool, error) {
 	ent := newEntry(newInlinePtrBytes(key.Bytes()), newInlinePtrBytes(value.Bytes()))
 
-	data := make([]byte, 0, len(ent)+ent.Key().Length()+ent.Value().Length())
-	data = append(data, ent[:]...)
-	data = append(data, key.Bytes()...)
-	data = append(data, value.Bytes()...)
-
-	if _, err := w.wf.Write(data); err != nil {
+	if _, err := w.fh.Write(ent[:]); err != nil {
 		return false, err
-	} else if err := w.wf.Flush(); err != nil {
-		return false, err
-	} else {
-		w.len += entrySize + uint64(ent.Key().Length()) + uint64(ent.Value().Length())
-		return w.len < w.cap, nil
 	}
+	w.len += entrySize
+
+	if ent.Key().Pointer() {
+		if _, err := w.fh.Write(key.Bytes()); err != nil {
+			return false, err
+		}
+		w.len += uint64(ent.Key().Length())
+	}
+
+	if ent.Value().Pointer() {
+		if _, err := w.fh.Write(value.Bytes()); err != nil {
+			return false, err
+		}
+		w.len += uint64(ent.Value().Length())
+	}
+
+	// stupid benchmarks
+	if w.fh != nullFile {
+		if err := w.fh.Sync(); err != nil {
+			return false, err
+		}
+	}
+
+	return w.len < w.cap, nil
 }

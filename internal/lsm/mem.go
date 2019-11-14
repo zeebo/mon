@@ -5,116 +5,88 @@ import (
 )
 
 type mem struct {
-	len  uint64
-	cap  uint64
-	sets map[string][]byte
-	dels map[string]struct{}
+	cap     uint64
+	entries map[string]entry
+	data    []byte
 }
 
 func newMem(cap uint64) mem {
 	return mem{
-		len:  headerSize,
-		cap:  cap,
-		sets: make(map[string][]byte),
-		dels: make(map[string]struct{}),
+		cap:     cap,
+		entries: make(map[string]entry),
+		data:    make([]byte, 0, cap),
 	}
 }
 
-func (m *mem) Len() uint64 { return m.len }
+func (m *mem) Len() uint64 { return uint64(len(m.data)) }
 func (m *mem) Cap() uint64 { return m.cap }
 
 func (m *mem) SetString(key string, value []byte) bool {
-	if value == nil {
-		value = []byte{}
+	kptr := newInlinePtrString(key)
+	if kptr.Pointer() {
+		kptr.SetOffset(uint64(len(m.data)))
+		m.data = append(m.data, key...)
+	}
+	vptr := newInlinePtrBytes(value)
+	if vptr.Pointer() {
+		vptr.SetOffset(uint64(len(m.data)))
+		m.data = append(m.data, value...)
 	}
 
-	if len(m.dels) == 0 {
-		if _, ok := m.sets[key]; !ok {
-			m.len += entrySize + uint64(len(key))
-		}
-	} else {
-		if _, ok := m.dels[key]; ok {
-			delete(m.dels, key)
-		} else {
-			m.len += entrySize + uint64(len(key))
-		}
-	}
-	m.sets[key] = value
-	return m.len < m.cap
+	m.entries[key] = newEntry(kptr, vptr)
+
+	return 32*uint64(len(m.entries))+uint64(len(m.data)) < m.cap
 }
 
-func (m *mem) AppendTo(buf []byte) []byte {
-	out := buf
-	if uint64(cap(out)-len(out)) < m.len {
-		out = make([]byte, 0, m.len)
+func (m *mem) Iterator() mergeIter {
+	sorter := &memSorter{
+		data:     m.data,
+		entries:  make([]entry, 0, len(m.entries)),
+		prefixes: make([]uint64, 0, len(m.entries)),
 	}
 
-	numEntries := uint64(len(m.sets)) + uint64(len(m.dels))
-
-	{
-		h := newHeader(0, headerSize, numEntries, 0)
-		out = append(out, h[:]...)
+	for _, ent := range m.entries {
+		sorter.entries = append(sorter.entries, ent)
+		sorter.prefixes = append(sorter.prefixes, ent.Key().Prefix())
 	}
 
-	// TODO(jeff): man this sorting is prolly gonna be slow
-	memKeys := make([]memKeyState, 0, numEntries)
-	for key, value := range m.sets {
-		kptr := newInlinePtrString(key)
-		memKeys = append(memKeys, memKeyState{
-			prefix: kptr.Prefix(),
-			key:    key,
-			value:  value,
-			ent:    newEntry(kptr, newInlinePtrBytes(value)),
-		})
-	}
-	for key := range m.dels {
-		kptr := newInlinePtrString(key)
-		memKeys = append(memKeys, memKeyState{
-			prefix: kptr.Prefix(),
-			key:    key,
-			ent:    newEntry(kptr, inlinePtr{}),
-		})
-	}
-	sort.Sort(memKeyStates(memKeys))
+	sort.Sort(sorter)
 
-	offset := headerSize + numEntries*entrySize
-	for _, mk := range memKeys {
-		if mk.ent.Key().Pointer() {
-			mk.ent.Key().SetOffset(offset)
-			offset += uint64(mk.ent.Key().Length())
-		}
-		if mk.ent.Value().Pointer() {
-			mk.ent.Value().SetOffset(offset)
-			offset += uint64(mk.ent.Value().Length())
-		}
-
-		out = append(out, mk.ent[:]...)
-	}
-
-	for _, mk := range memKeys {
-		if mk.ent.Key().Pointer() {
-			out = append(out, mk.key...)
-		}
-		if mk.ent.Value().Pointer() {
-			out = append(out, mk.value...)
-		}
-	}
-
-	return out
+	// TODO(jeff): should be an iterator
+	return nil
 }
 
-type memKeyState struct {
-	prefix uint64
-	key    string
-	value  []byte
-	ent    entry
+type memSorter struct {
+	data     []byte
+	entries  []entry
+	prefixes []uint64
 }
 
-type memKeyStates []memKeyState
+func (m *memSorter) Len() int { return len(m.entries) }
 
-func (ks memKeyStates) Len() int          { return len(ks) }
-func (ks memKeyStates) Swap(i int, j int) { ks[i], ks[j] = ks[j], ks[i] }
-func (ks memKeyStates) Less(i int, j int) bool {
-	ki, kj := &ks[i], &ks[j]
-	return ki.prefix < kj.prefix || (ki.prefix == kj.prefix && ki.key < kj.key)
+func (m *memSorter) Swap(i int, j int) {
+	swapEntries(m.entries, i, j)
+	swapPrefixes(m.prefixes, i, j)
+}
+
+// this is weird but the Swap method compiles WAY worse with direct field
+// access for the swap bit. if we pass it through an inlined function, it
+// generates much better code. i have no idea.
+
+func swapEntries(xs []entry, i, j int)   { xs[i], xs[j] = xs[j], xs[i] }
+func swapPrefixes(xs []uint64, i, j int) { xs[i], xs[j] = xs[j], xs[i] }
+
+func (m *memSorter) Less(i int, j int) bool {
+	kip, kjp := m.prefixes[i], m.prefixes[j]
+	if kip < kjp {
+		return true
+	} else if kip > kjp {
+		return false
+	}
+
+	ki, kj := m.entries[i].Key(), m.entries[j].Key()
+	kis, kjs := ki.Offset(), kj.Offset()
+	kie, kje := kis+uint64(ki.Length()), kjs+uint64(kj.Length())
+
+	return string(m.data[kis:kie]) < string(m.data[kjs:kje])
 }

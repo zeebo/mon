@@ -9,13 +9,16 @@ import (
 )
 
 func TestWALIter(t *testing.T) {
-	var buf bytes.Buffer
-	w := NewWALUnsafe(&buf, 1024)
+	fh, close := tempFile(t)
+	defer close()
+
+	w := newWAL(fh, 1024)
 	_, _ = w.AddString("0", []byte("0"))
 	_, _ = w.DelString("1")
 	_, _ = w.AddString("2", []byte("2"))
 
-	wi := NewWALIterator(bytes.NewReader(buf.Bytes()))
+	fileReset(t, fh)
+	wi := newWALIterator(fh)
 
 	ent, key, value, err := wi.Next()
 	consumed, prefix := wi.Consumed()
@@ -23,7 +26,7 @@ func TestWALIter(t *testing.T) {
 	assert.Equal(t, string(key), "0")
 	assert.Equal(t, string(value), "0")
 	assert.NoError(t, err)
-	assert.Equal(t, consumed, 34)
+	assert.Equal(t, consumed, 32)
 	assert.That(t, !prefix)
 
 	ent, key, value, err = wi.Next()
@@ -32,7 +35,7 @@ func TestWALIter(t *testing.T) {
 	assert.Equal(t, string(key), "1")
 	assert.Nil(t, value)
 	assert.NoError(t, err)
-	assert.Equal(t, consumed, 67)
+	assert.Equal(t, consumed, 64)
 	assert.That(t, !prefix)
 
 	ent, key, value, err = wi.Next()
@@ -41,7 +44,7 @@ func TestWALIter(t *testing.T) {
 	assert.Equal(t, string(key), "2")
 	assert.Equal(t, string(value), "2")
 	assert.NoError(t, err)
-	assert.Equal(t, consumed, 101)
+	assert.Equal(t, consumed, 96)
 	assert.That(t, !prefix)
 
 	ent, key, value, err = wi.Next()
@@ -50,17 +53,19 @@ func TestWALIter(t *testing.T) {
 	assert.Nil(t, key)
 	assert.Nil(t, value)
 	assert.Equal(t, err, io.EOF)
-	assert.Equal(t, consumed, 101)
+	assert.Equal(t, consumed, 96)
 	assert.That(t, !prefix)
 }
 
 func TestWALIter_Truncated(t *testing.T) {
-	var buf bytes.Buffer
-	w := NewWALUnsafe(&buf, 1024)
+	fh, close := tempFile(t)
+	defer close()
+
+	w := newWAL(fh, 1024)
 	_, _ = w.AddString("0", []byte("0"))
 	_, _ = w.AddString("01235", []byte("01235"))
 
-	wi := NewWALIterator(bytes.NewReader(buf.Bytes()[:68]))
+	wi := newWALIterator(bytes.NewReader(fileContents(t, fh)[:62]))
 
 	ent, key, value, err := wi.Next()
 	consumed, prefix := wi.Consumed()
@@ -68,7 +73,7 @@ func TestWALIter_Truncated(t *testing.T) {
 	assert.Equal(t, string(key), "0")
 	assert.Equal(t, string(value), "0")
 	assert.NoError(t, err)
-	assert.Equal(t, consumed, 34)
+	assert.Equal(t, consumed, 32)
 	assert.That(t, !prefix)
 
 	ent, key, value, err = wi.Next()
@@ -77,6 +82,6 @@ func TestWALIter_Truncated(t *testing.T) {
 	assert.Nil(t, key)
 	assert.Nil(t, value)
 	assert.Equal(t, err, io.ErrUnexpectedEOF)
-	assert.Equal(t, consumed, 34)
+	assert.Equal(t, consumed, 32)
 	assert.That(t, prefix)
 }
