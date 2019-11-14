@@ -20,7 +20,7 @@ func newInlinePtrBytes(data []byte) (i inlinePtr) {
 		var buf []byte
 
 		if len(data) > 13 {
-			buf = i[3:12]
+			buf = i[3:11]
 			i[0] = 1
 		} else {
 			buf = i[3:16]
@@ -38,7 +38,7 @@ func newInlinePtrString(data string) (i inlinePtr) {
 	var buf []byte
 
 	if len(data) > 13 {
-		buf = i[3:12]
+		buf = i[3:11]
 		i[0] = 1
 	} else {
 		buf = i[3:16]
@@ -77,7 +77,7 @@ type inlinePtrReader interface {
 	ReadPointer(ptr inlinePtr) ([]byte, error)
 }
 
-func readInlinePointer(r inlinePtrReader, ptr inlinePtr) ([]byte, error) {
+func readInlinePtr(r inlinePtrReader, ptr inlinePtr) ([]byte, error) {
 	switch ptr[0] {
 	case inlinePtr_Null:
 		return nil, nil

@@ -50,30 +50,30 @@ func (m *merger) readElement(iter mergeIter, ele *entryHeapElement) (ok bool, er
 	} else if err != nil {
 		return false, err
 	}
-	ele.key, err = readInlinePointer(iter, *ele.ent.Key())
+	ele.key, err = readInlinePtr(iter, *ele.ent.Key())
 	if err != nil {
 		return false, err
 	}
 	return true, nil
 }
 
-func (m *merger) Next() (ent entry, key []byte, r inlinePtrReader, err error) {
+func (m *merger) Next() (ele entryHeapElement, r inlinePtrReader, err error) {
 again:
 	ele, ok := m.eh.Pop()
 	if !ok {
 		m.prev, m.pref = nil, 0
-		return entry{}, nil, nil, io.EOF
+		return entryHeapElement{}, nil, io.EOF
 	}
 
 	if ele.idx < 0 || ele.idx >= len(m.iters) {
-		return entry{}, nil, nil, errs.New("invalid iterator state")
+		return entryHeapElement{}, nil, errs.New("invalid iterator state")
 	}
 
 	iter := m.iters[ele.idx]
 	var nele entryHeapElement
 	ok, err = m.readElement(iter, &nele)
 	if err != nil {
-		return entry{}, nil, nil, err
+		return entryHeapElement{}, nil, err
 	} else if ok {
 		nele.idx = ele.idx
 		m.eh.Push(nele)
@@ -85,5 +85,5 @@ again:
 	}
 
 	m.prev, m.pref = ele.key, pref
-	return ele.ent, ele.key, iter, nil
+	return ele, iter, nil
 }

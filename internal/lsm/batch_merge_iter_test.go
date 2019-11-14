@@ -22,7 +22,7 @@ func TestBatchMergeIterAdapter(t *testing.T) {
 		for i := 0; i < 1000; i++ {
 			ent, err := iter.Next()
 			assert.NoError(t, err)
-			key, err := readInlinePointer(iter, *ent.Key())
+			key, err := readInlinePtr(iter, *ent.Key())
 			assert.NoError(t, err)
 			assert.Equal(t, string(key), fmt.Sprint(i))
 		}

@@ -11,9 +11,8 @@ func BenchmarkMem(b *testing.B) {
 	b.Run("Iterator", func(b *testing.B) {
 		var rng pcg.T
 
-		m := newMem(1024)
-		for i := 0; i < 1000; i++ {
-			m.SetString(fmt.Sprint(rng.Uint64()), []byte(fmt.Sprint(rng.Uint64())))
+		m := newMem(1 << 20)
+		for m.SetString(fmt.Sprint(rng.Uint64()), []byte(fmt.Sprint(rng.Uint64()))) {
 		}
 
 		b.ReportAllocs()

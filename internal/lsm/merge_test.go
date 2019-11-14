@@ -30,12 +30,12 @@ func TestMergedIterator(t *testing.T) {
 		assert.NoError(t, err)
 
 		for i := 0; i < len(expect); i++ {
-			_, key, _, err := mi.Next()
+			ele, _, err := mi.Next()
 			assert.NoError(t, err)
-			assert.Equal(t, string(key), expect[i:i+1])
+			assert.Equal(t, string(ele.key), expect[i:i+1])
 		}
 
-		_, _, _, err = mi.Next()
+		_, _, err = mi.Next()
 		assert.Equal(t, err, io.EOF)
 	})
 }
