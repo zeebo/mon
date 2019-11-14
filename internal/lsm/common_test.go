@@ -9,7 +9,9 @@ import (
 	"github.com/zeebo/assert"
 )
 
-var nullFile, _ = os.OpenFile(os.DevNull, os.O_RDWR|os.O_APPEND, 0644)
+func init() {
+	nullFile, _ = os.OpenFile(os.DevNull, os.O_RDWR|os.O_APPEND, 0644)
+}
 
 func tempFile(t *testing.T) (*os.File, func()) {
 	fh, err := ioutil.TempFile("", "lsm-")

@@ -3,9 +3,12 @@ package lsm
 import (
 	"bufio"
 	"io"
+	"os"
 
 	"github.com/zeebo/errs"
 )
+
+var nullFile *os.File
 
 type buffer struct {
 	br   *bufio.Reader

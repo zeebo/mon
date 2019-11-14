@@ -15,22 +15,21 @@ const (
 type inlinePtr [16]byte
 
 func newInlinePtrBytes(data []byte) (i inlinePtr) {
-	if data == nil {
-		return i
+	if data != nil {
+		binary.LittleEndian.PutUint16(i[1:3], uint16(len(data)))
+		var buf []byte
+
+		if len(data) > 13 {
+			buf = i[3:12]
+			i[0] = 1
+		} else {
+			buf = i[3:16]
+			i[0] = 2
+		}
+
+		copy(buf, data)
 	}
 
-	binary.LittleEndian.PutUint16(i[1:3], uint16(len(data)))
-	var buf []byte
-
-	if len(data) > 13 {
-		buf = i[3:8]
-		i[0] = 1
-	} else {
-		buf = i[3:16]
-		i[0] = 2
-	}
-
-	copy(buf, data)
 	return i
 }
 
@@ -39,7 +38,7 @@ func newInlinePtrString(data string) (i inlinePtr) {
 	var buf []byte
 
 	if len(data) > 13 {
-		buf = i[3:8]
+		buf = i[3:12]
 		i[0] = 1
 	} else {
 		buf = i[3:16]
@@ -55,8 +54,8 @@ func (i inlinePtr) Pointer() bool { return i[0] == 1 }
 func (i inlinePtr) Inline() bool  { return i[0] == 2 }
 
 func (i inlinePtr) Length() int    { return int(binary.LittleEndian.Uint16(i[1:3])) }
-func (i inlinePtr) Prefix() uint64 { return binary.BigEndian.Uint64(i[:]) & 0x000000FFFFFFFFFF }
-func (i inlinePtr) Offset() uint64 { return binary.LittleEndian.Uint64(i[8:]) }
+func (i inlinePtr) Prefix() uint64 { return binary.BigEndian.Uint64(i[3:]) }
+func (i inlinePtr) Offset() uint64 { return binary.BigEndian.Uint64(i[8:]) & 0x000000FFFFFFFFFF }
 
 func (i inlinePtr) InlineData() []byte {
 	end := 3 + i.Length()
@@ -66,7 +65,13 @@ func (i inlinePtr) InlineData() []byte {
 	return nil
 }
 
-func (i *inlinePtr) SetOffset(offset uint64) { binary.LittleEndian.PutUint64(i[8:], offset) }
+func (i *inlinePtr) SetOffset(offset uint64) {
+	i[11] = byte(offset >> 32)
+	i[12] = byte(offset >> 24)
+	i[13] = byte(offset >> 16)
+	i[14] = byte(offset >> 8)
+	i[15] = byte(offset)
+}
 
 type inlinePtrReader interface {
 	ReadPointer(ptr inlinePtr) ([]byte, error)
