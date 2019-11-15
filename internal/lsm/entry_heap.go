@@ -3,9 +3,16 @@ package lsm
 import "bytes"
 
 type entryHeapElement struct {
-	ent entry
-	key []byte
-	idx int
+	ent  entry
+	mkey []byte // maybe key
+	idx  int
+}
+
+func (e *entryHeapElement) Key() []byte {
+	if e.mkey != nil {
+		return e.mkey
+	}
+	return e.ent.Key().InlineData()
 }
 
 func entryHeapElementLess(i, j *entryHeapElement) bool {
@@ -15,7 +22,7 @@ func entryHeapElementLess(i, j *entryHeapElement) bool {
 		return false
 	}
 
-	if cmp := bytes.Compare(i.key, j.key); cmp == -1 {
+	if cmp := bytes.Compare(i.Key(), j.Key()); cmp == -1 {
 		return true
 	} else if cmp == 1 {
 		return false

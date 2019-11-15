@@ -1,5 +1,11 @@
 package lsm
 
+import (
+	"io"
+
+	"github.com/zeebo/errs"
+)
+
 type mem struct {
 	cap  uint64
 	heap []inlinePtr
@@ -22,6 +28,15 @@ func initMem(m *mem, cap uint64) {
 	m.cap = cap
 	m.keys = make(map[string]memKeyData)
 	m.data = make([]byte, 0, cap)
+}
+
+func (m *mem) iterClone() *mem {
+	return &mem{
+		cap:  m.cap,
+		heap: append([]inlinePtr(nil), m.heap...),
+		keys: m.keys,
+		data: m.data,
+	}
 }
 
 func (m *mem) Len() uint64 { return uint64(len(m.data)) }
@@ -52,9 +67,13 @@ func (m *mem) SetString(key string, value []byte) bool {
 
 func (m *mem) readInlinePtr(ptr *inlinePtr) []byte {
 	if ptr.Pointer() {
-		return m.data[ptr.Offset() : ptr.Offset()+uint64(ptr.Length())]
+		begin := ptr.Offset()
+		end := begin + uint64(ptr.Length())
+		if begin < end && begin < uint64(len(m.data)) && end < uint64(len(m.data)) {
+			return m.data[begin:end]
+		}
 	}
-	return ptr.InlineData()
+	return nil
 }
 
 func (m *mem) inlinePtrLess(i, j *inlinePtr) bool {
@@ -63,7 +82,16 @@ func (m *mem) inlinePtrLess(i, j *inlinePtr) bool {
 	} else if ip > jp {
 		return false
 	} else {
-		return string(m.readInlinePtr(i)) < string(m.readInlinePtr(j))
+		ki := m.readInlinePtr(i)
+		if ki == nil {
+			ki = i.InlineData()
+		}
+		kj := m.readInlinePtr(j)
+		if kj == nil {
+			kj = j.InlineData()
+		}
+
+		return string(ki) < string(kj)
 	}
 }
 
@@ -111,18 +139,43 @@ next:
 	}
 }
 
-func (m *mem) Iterator() mergeIter {
-	for len(m.heap) > 0 {
-		n := len(m.heap) - 1
-		kptr := m.heap[0]
-		m.heap[0] = m.heap[n]
-		m.heapDown(m.heap)
-		m.heap = m.heap[:n]
+func (m *mem) Next() (entry, error) {
+	heap := m.heap
 
-		kdata := m.keys[string(m.readInlinePtr(&kptr))]
-		_ = newEntry(kptr, kdata.vptr)
+	if len(heap) == 0 {
+		return entry{}, io.EOF
 	}
 
-	// TODO(jeff): should be an iterator
-	return nil
+	n := len(heap) - 1
+	kptr := heap[0]
+	heap[0] = heap[n]
+	m.heapDown(heap)
+	m.heap = heap[:n]
+
+	var key []byte
+	if kptr.Pointer() {
+		var err error
+		key, err = m.ReadPointer(kptr)
+		if err != nil {
+			return entry{}, err
+		}
+	} else if kptr.Inline() {
+		key = kptr.InlineData()
+	}
+
+	kdata, ok := m.keys[string(key)]
+	if !ok {
+		return entry{}, errs.New("invalid memory heap")
+	}
+
+	return newEntry(kptr, kdata.vptr), nil
+}
+
+func (m *mem) ReadPointer(ptr inlinePtr) ([]byte, error) {
+	begin := ptr.Offset()
+	end := begin + uint64(ptr.Length())
+	if begin <= end && begin < uint64(len(m.data)) && end <= uint64(len(m.data)) {
+		return m.data[begin:end], nil
+	}
+	return nil, errs.New("invalid pointer read: %d[%d:%d]", len(m.data), begin, end)
 }

@@ -2,8 +2,6 @@ package lsm
 
 import (
 	"encoding/binary"
-
-	"github.com/zeebo/errs"
 )
 
 const (
@@ -49,9 +47,9 @@ func newInlinePtrString(data string) (i inlinePtr) {
 	return i
 }
 
-func (i inlinePtr) Null() bool    { return i[0] == 0 }
-func (i inlinePtr) Pointer() bool { return i[0] == 1 }
-func (i inlinePtr) Inline() bool  { return i[0] == 2 }
+func (i inlinePtr) Null() bool    { return i[0] == inlinePtr_Null }
+func (i inlinePtr) Pointer() bool { return i[0] == inlinePtr_Pointer }
+func (i inlinePtr) Inline() bool  { return i[0] == inlinePtr_Inline }
 
 func (i inlinePtr) Length() int    { return int(binary.LittleEndian.Uint16(i[1:3])) }
 func (i inlinePtr) Prefix() uint64 { return binary.BigEndian.Uint64(i[3:]) }
@@ -75,21 +73,4 @@ func (i *inlinePtr) SetOffset(offset uint64) {
 
 type inlinePtrReader interface {
 	ReadPointer(ptr inlinePtr) ([]byte, error)
-}
-
-func readInlinePtr(r inlinePtrReader, ptr inlinePtr) ([]byte, error) {
-	switch ptr[0] {
-	case inlinePtr_Null:
-		return nil, nil
-
-	case inlinePtr_Pointer:
-		return r.ReadPointer(ptr)
-
-	case inlinePtr_Inline:
-		if data := ptr.InlineData(); data != nil {
-			return data, nil
-		}
-	}
-
-	return nil, errs.New("invalid inline pointer")
 }

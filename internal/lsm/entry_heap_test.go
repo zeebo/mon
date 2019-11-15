@@ -11,7 +11,7 @@ import (
 )
 
 func TestEntryHeap(t *testing.T) {
-	mk := func(key string) entryHeapElement { return entryHeapElement{key: []byte(key)} }
+	mk := func(key string) entryHeapElement { return entryHeapElement{mkey: []byte(key)} }
 	mks := func(keys ...string) (out []entryHeapElement) {
 		for _, key := range keys {
 			out = append(out, mk(key))
@@ -26,7 +26,7 @@ func TestEntryHeap(t *testing.T) {
 		for i := 0; i < len(expected); i++ {
 			ele, ok := eh.Pop()
 			assert.That(t, ok)
-			assert.Equal(t, string(ele.key), expected[i:i+1])
+			assert.Equal(t, string(ele.Key()), expected[i:i+1])
 		}
 		_, ok := eh.Pop()
 		assert.That(t, !ok)
@@ -44,7 +44,7 @@ func TestEntryHeap(t *testing.T) {
 		for i := 0; i < len(expected); i++ {
 			ele, ok := eh.Pop()
 			assert.That(t, ok)
-			assert.Equal(t, string(ele.key), expected[i:i+1])
+			assert.Equal(t, string(ele.Key()), expected[i:i+1])
 		}
 		_, ok := eh.Pop()
 		assert.That(t, !ok)
@@ -73,7 +73,7 @@ func TestEntryHeap(t *testing.T) {
 				ele, ok := eh.Pop()
 				assert.Equal(t, ok, len(exp) > 0)
 				if ok {
-					assert.Equal(t, string(ele.key), exp[0])
+					assert.Equal(t, string(ele.Key()), exp[0])
 					exp = exp[1:]
 				}
 			} else {
@@ -88,14 +88,14 @@ func TestEntryHeap(t *testing.T) {
 
 func BenchmarkEntryHeap(b *testing.B) {
 	eles := [...]entryHeapElement{
-		entryHeapElement{key: []byte("0")},
-		entryHeapElement{key: []byte("1")},
-		entryHeapElement{key: []byte("2")},
-		entryHeapElement{key: []byte("3")},
-		entryHeapElement{key: []byte("4")},
-		entryHeapElement{key: []byte("5")},
-		entryHeapElement{key: []byte("6")},
-		entryHeapElement{key: []byte("7")},
+		entryHeapElement{mkey: []byte("0")},
+		entryHeapElement{mkey: []byte("1")},
+		entryHeapElement{mkey: []byte("2")},
+		entryHeapElement{mkey: []byte("3")},
+		entryHeapElement{mkey: []byte("4")},
+		entryHeapElement{mkey: []byte("5")},
+		entryHeapElement{mkey: []byte("6")},
+		entryHeapElement{mkey: []byte("7")},
 	}
 
 	b.Run("PopPush", func(b *testing.B) {

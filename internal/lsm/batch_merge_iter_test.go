@@ -22,8 +22,15 @@ func TestBatchMergeIterAdapter(t *testing.T) {
 		for i := 0; i < 1000; i++ {
 			ent, err := iter.Next()
 			assert.NoError(t, err)
-			key, err := readInlinePtr(iter, *ent.Key())
-			assert.NoError(t, err)
+
+			var key []byte
+			if kptr := ent.Key(); kptr.Pointer() {
+				key, err = iter.ReadPointer(*kptr)
+				assert.NoError(t, err)
+			} else if kptr.Inline() {
+				key = kptr.InlineData()
+			}
+
 			assert.Equal(t, string(key), fmt.Sprint(i))
 		}
 	})

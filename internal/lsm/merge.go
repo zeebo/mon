@@ -15,8 +15,17 @@ type mergeIter interface {
 type merger struct {
 	iters []mergeIter
 	eh    entryHeap
-	prev  []byte
-	pref  uint64
+	prev  struct {
+		key []byte
+		ptr inlinePtr
+	}
+}
+
+func (m *merger) prevKey() []byte {
+	if m.prev.key != nil {
+		return m.prev.key
+	}
+	return m.prev.ptr.InlineData()
 }
 
 func newMerger(iters []mergeIter) (*merger, error) {
@@ -50,10 +59,14 @@ func (m *merger) readElement(iter mergeIter, ele *entryHeapElement) (ok bool, er
 	} else if err != nil {
 		return false, err
 	}
-	ele.key, err = readInlinePtr(iter, *ele.ent.Key())
-	if err != nil {
-		return false, err
+
+	if kptr := ele.ent.Key(); kptr.Pointer() {
+		ele.mkey, err = iter.ReadPointer(*kptr)
+		if err != nil {
+			return false, err
+		}
 	}
+
 	return true, nil
 }
 
@@ -61,7 +74,6 @@ func (m *merger) Next() (ele entryHeapElement, r inlinePtrReader, err error) {
 again:
 	ele, ok := m.eh.Pop()
 	if !ok {
-		m.prev, m.pref = nil, 0
 		return entryHeapElement{}, nil, io.EOF
 	}
 
@@ -79,11 +91,13 @@ again:
 		m.eh.Push(nele)
 	}
 
-	pref := ele.ent.Key().Prefix()
-	if m.prev != nil && m.pref == pref && string(m.prev) == string(ele.key) {
-		goto again
+	if !m.prev.ptr.Null() && m.prev.ptr.Prefix() == ele.ent.Key().Prefix() {
+		if string(ele.Key()) == string(m.prevKey()) {
+			goto again
+		}
 	}
 
-	m.prev, m.pref = ele.key, pref
+	m.prev.key = ele.mkey
+	m.prev.ptr = *ele.ent.Key()
 	return ele, iter, nil
 }
