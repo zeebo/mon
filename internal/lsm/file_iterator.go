@@ -53,8 +53,13 @@ func (fi *fileIterator) ReadEntries(buf []entry) (int, error) {
 	}
 }
 
-func (fi *fileIterator) ReadPointer(ptr inlinePtr) ([]byte, error) {
-	buf := make([]byte, ptr.Length())
+func (fi *fileIterator) AppendPointer(ptr inlinePtr, buf []byte) ([]byte, error) {
+	if l := ptr.Length(); cap(buf) < l {
+		buf = make([]byte, l)
+	} else {
+		buf = buf[:l]
+	}
+
 	n, err := fi.values.ReadAt(buf, int64(ptr.Offset()))
 	if n == len(buf) {
 		return buf, nil

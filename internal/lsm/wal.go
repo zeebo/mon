@@ -6,17 +6,19 @@ import (
 )
 
 type wal struct {
-	fh *os.File
+	fh   *os.File
+	sync bool
 }
 
-func newWAL(fh *os.File) *wal {
+func newWAL(fh *os.File, sync bool) *wal {
 	var w wal
-	initWal(&w, fh)
+	initWal(&w, fh, sync)
 	return &w
 }
 
-func initWal(w *wal, fh *os.File) {
+func initWal(w *wal, fh *os.File, sync bool) {
 	w.fh = fh
+	w.sync = sync
 }
 
 func (w *wal) Truncate() error {
@@ -47,9 +49,11 @@ func (w *wal) AddString(key string, value []byte) error {
 		}
 	}
 
-	// if err := w.fh.Sync(); err != nil {
-	// 	return err
-	// }
+	if w.sync {
+		if err := w.fh.Sync(); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }

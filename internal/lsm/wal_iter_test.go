@@ -13,7 +13,7 @@ func TestWALIter(t *testing.T) {
 		fh, cleanup := tempFile(t)
 		defer cleanup()
 
-		w := newWAL(fh)
+		w := newWAL(fh, false)
 		assert.NoError(t, w.AddString("0", []byte("0")))
 		assert.NoError(t, w.AddString("1", nil))
 		assert.NoError(t, w.AddString("2", []byte("2")))
@@ -62,7 +62,7 @@ func TestWALIter(t *testing.T) {
 		fh, cleanup := tempFile(t)
 		defer cleanup()
 
-		w := newWAL(fh)
+		w := newWAL(fh, false)
 		assert.NoError(t, w.AddString("0", []byte("0")))
 		assert.NoError(t, w.AddString("01235", []byte("01235")))
 

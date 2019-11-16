@@ -8,7 +8,7 @@ type entryHeapElement struct {
 	idx  int
 }
 
-func (e *entryHeapElement) Key() []byte {
+func (e *entryHeapElement) testKey() []byte {
 	if e.mkey != nil {
 		return e.mkey
 	}

@@ -32,7 +32,7 @@ func TestMergedIterator(t *testing.T) {
 		for i := 0; i < len(expect); i++ {
 			ele, _, err := mi.Next()
 			assert.NoError(t, err)
-			assert.Equal(t, string(ele.Key()), expect[i:i+1])
+			assert.Equal(t, string(ele.testKey()), expect[i:i+1])
 		}
 
 		_, _, err = mi.Next()
@@ -42,7 +42,7 @@ func TestMergedIterator(t *testing.T) {
 
 type fakeMergeIterator []entry
 
-func (f *fakeMergeIterator) ReadPointer(ptr inlinePtr) ([]byte, error) {
+func (f *fakeMergeIterator) AppendPointer(ptr inlinePtr, buf []byte) ([]byte, error) {
 	return nil, errs.New("unimplemented")
 }
 

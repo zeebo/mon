@@ -61,7 +61,7 @@ func (m *merger) readElement(iter mergeIter, ele *entryHeapElement) (ok bool, er
 	}
 
 	if kptr := ele.ent.Key(); kptr.Pointer() {
-		ele.mkey, err = iter.ReadPointer(*kptr)
+		ele.mkey, err = iter.AppendPointer(*kptr, nil) // sadness
 		if err != nil {
 			return false, err
 		}
@@ -92,7 +92,11 @@ again:
 	}
 
 	if !m.prev.ptr.Null() && m.prev.ptr.Prefix() == ele.ent.Key().Prefix() {
-		if string(ele.Key()) == string(m.prevKey()) {
+		key := ele.mkey
+		if key == nil {
+			key = ele.ent.Key().InlineData()
+		}
+		if string(key) == string(m.prevKey()) {
 			goto again
 		}
 	}

@@ -25,7 +25,7 @@ func TestBatchMergeIterAdapter(t *testing.T) {
 
 			var key []byte
 			if kptr := ent.Key(); kptr.Pointer() {
-				key, err = iter.ReadPointer(*kptr)
+				key, err = iter.AppendPointer(*kptr, nil)
 				assert.NoError(t, err)
 			} else if kptr.Inline() {
 				key = kptr.InlineData()
@@ -38,7 +38,7 @@ func TestBatchMergeIterAdapter(t *testing.T) {
 
 type fakeBatchMergeIter []entry
 
-func (f *fakeBatchMergeIter) ReadPointer(ptr inlinePtr) ([]byte, error) {
+func (f *fakeBatchMergeIter) AppendPointer(ptr inlinePtr, buf []byte) ([]byte, error) {
 	return nil, errs.New("unimplemented")
 }
 

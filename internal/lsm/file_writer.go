@@ -5,6 +5,7 @@ import "io"
 func writeFile(mg *merger, entries, values *writeHandle) error {
 	forceWrite := len(mg.iters) == 1
 	skipWrite := len(mg.iters) - 1
+	var valueBuf []byte
 
 	for {
 		ele, r, err := mg.Next()
@@ -17,7 +18,11 @@ func writeFile(mg *merger, entries, values *writeHandle) error {
 		if forceWrite || ele.idx != skipWrite {
 			if kptr := ele.ent.Key(); kptr.Pointer() {
 				kptr.SetOffset(values.Offset())
-				if err := values.Append(ele.Key()); err != nil {
+				key := ele.mkey
+				if key == nil {
+					key = ele.ent.Key().InlineData()
+				}
+				if err := values.Append(key); err != nil {
 					return err
 				}
 			}
@@ -28,10 +33,11 @@ func writeFile(mg *merger, entries, values *writeHandle) error {
 
 				var value []byte
 				if vptr.Pointer() {
-					value, err = r.ReadPointer(*vptr)
+					value, err = r.AppendPointer(*vptr, valueBuf[:0])
 					if err != nil {
 						return err
 					}
+					valueBuf = value[:0]
 				} else if vptr.Inline() {
 					value = vptr.InlineData()
 				}

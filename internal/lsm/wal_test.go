@@ -11,7 +11,7 @@ func BenchmarkWAL(b *testing.B) {
 		fh, cleanup := tempFile(b)
 		defer cleanup()
 
-		w := newWAL(fh)
+		w := newWAL(fh, false)
 		value := make([]byte, 128)
 		b.SetBytes(int64(entrySize + len(value)))
 		b.ReportAllocs()

@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/boltdb/bolt"
 	"github.com/zeebo/assert"
 	"github.com/zeebo/pcg"
 )
@@ -20,18 +19,34 @@ func TestLSM(t *testing.T) {
 			matches, _ := filepath.Glob(dir + "/*")
 			for _, path := range matches {
 				stat, _ := os.Stat(path)
-				fmt.Println(path, stat.Size())
+				t.Logf("% 8d %s", stat.Size(), path)
 			}
 		}()
 
-		lsm, err := New(dir, Options{})
+		value := make([]byte, valueSize)
+		lsm, err := New(dir, Options{
+			MemCap:    4096,
+			NoWALSync: true,
+		})
 		assert.NoError(t, err)
 
-		value := make([]byte, 124)
-		for i := 0; i < 100000; i++ {
+		for i := 0; i < 10000; i++ {
 			assert.NoError(t, lsm.Set(fmt.Sprint(pcg.Uint32()), value))
 		}
 	})
+}
+
+const valueSize = 128
+const numKeys = 1 << 20
+
+var keys [numKeys]string
+var keysb [numKeys][]byte
+
+func init() {
+	for i := range keys {
+		keys[i] = fmt.Sprint(pcg.Uint32())
+		keysb[i] = []byte(keys[i])
+	}
 }
 
 func BenchmarkLSM(b *testing.B) {
@@ -39,48 +54,50 @@ func BenchmarkLSM(b *testing.B) {
 		dir, cleanup := tempDir(b)
 		defer cleanup()
 
-		lsm, err := New(dir, Options{})
+		lsm, err := New(dir, Options{
+			NoWALSync: true,
+		})
 		assert.NoError(b, err)
 
-		value := make([]byte, 124)
+		value := make([]byte, valueSize)
 
-		b.SetBytes(int64(len(value)))
+		b.SetBytes(valueSize)
 		b.ResetTimer()
 		b.ReportAllocs()
 
 		for i := 0; i < b.N; i++ {
-			assert.NoError(b, lsm.Set(fmt.Sprint(pcg.Uint32()), value))
+			assert.NoError(b, lsm.Set(keys[pcg.Uint32n(numKeys)%numKeys], value))
 		}
 	})
 }
 
-func BenchmarkBolt(b *testing.B) {
-	b.Run("Basic", func(b *testing.B) {
-		dir, cleanup := tempDir(b)
-		defer cleanup()
+// func BenchmarkBolt(b *testing.B) {
+// 	b.Run("Basic", func(b *testing.B) {
+// 		dir, cleanup := tempDir(b)
+// 		defer cleanup()
 
-		db, err := bolt.Open(filepath.Join(dir, "foo"), 0644, nil)
-		assert.NoError(b, err)
-		defer db.Close()
-		bucket := []byte("bucket")
+// 		db, err := bolt.Open(filepath.Join(dir, "foo"), 0644, nil)
+// 		assert.NoError(b, err)
+// 		defer db.Close()
+// 		bucket := []byte("bucket")
 
-		db.NoSync = true
+// 		db.NoSync = true
 
-		assert.NoError(b, db.Update(func(tx *bolt.Tx) error {
-			_, err := tx.CreateBucket(bucket)
-			return err
-		}))
+// 		assert.NoError(b, db.Update(func(tx *bolt.Tx) error {
+// 			_, err := tx.CreateBucket(bucket)
+// 			return err
+// 		}))
 
-		value := make([]byte, 124)
+// 		value := make([]byte, valueSize)
 
-		b.SetBytes(int64(len(value)))
-		b.ResetTimer()
-		b.ReportAllocs()
+// 		b.SetBytes(valueSize)
+// 		b.ResetTimer()
+// 		b.ReportAllocs()
 
-		for i := 0; i < b.N; i++ {
-			assert.NoError(b, db.Update(func(tx *bolt.Tx) error {
-				return tx.Bucket(bucket).Put([]byte(fmt.Sprint(pcg.Uint32())), value)
-			}))
-		}
-	})
-}
+// 		for i := 0; i < b.N; i++ {
+// 			assert.NoError(b, db.Update(func(tx *bolt.Tx) error {
+// 				return tx.Bucket(bucket).Put(keysb[pcg.Uint32n(numKeys)%numKeys], value)
+// 			}))
+// 		}
+// 	})
+// }

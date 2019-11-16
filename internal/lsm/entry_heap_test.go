@@ -26,7 +26,7 @@ func TestEntryHeap(t *testing.T) {
 		for i := 0; i < len(expected); i++ {
 			ele, ok := eh.Pop()
 			assert.That(t, ok)
-			assert.Equal(t, string(ele.Key()), expected[i:i+1])
+			assert.Equal(t, string(ele.testKey()), expected[i:i+1])
 		}
 		_, ok := eh.Pop()
 		assert.That(t, !ok)
@@ -44,7 +44,7 @@ func TestEntryHeap(t *testing.T) {
 		for i := 0; i < len(expected); i++ {
 			ele, ok := eh.Pop()
 			assert.That(t, ok)
-			assert.Equal(t, string(ele.Key()), expected[i:i+1])
+			assert.Equal(t, string(ele.testKey()), expected[i:i+1])
 		}
 		_, ok := eh.Pop()
 		assert.That(t, !ok)
@@ -73,7 +73,7 @@ func TestEntryHeap(t *testing.T) {
 				ele, ok := eh.Pop()
 				assert.Equal(t, ok, len(exp) > 0)
 				if ok {
-					assert.Equal(t, string(ele.Key()), exp[0])
+					assert.Equal(t, string(ele.testKey()), exp[0])
 					exp = exp[1:]
 				}
 			} else {

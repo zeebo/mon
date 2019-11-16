@@ -46,7 +46,7 @@ func TestFileIterator(t *testing.T) {
 			assert.That(t, prev < key)
 			prev = key
 
-			data, err := bi.ReadPointer(*ent.Value())
+			data, err := bi.AppendPointer(*ent.Value(), nil)
 			assert.NoError(t, err)
 			assert.That(t, bytes.Equal(data, make([]byte, 128)))
 		}
@@ -69,6 +69,7 @@ func BenchmarkFileIterator(b *testing.B) {
 		defer cleanup()
 
 		assert.NoError(b, writeFile(mg, entries, values))
+		var buf []byte
 
 		b.ReportAllocs()
 		b.ResetTimer()
@@ -89,10 +90,10 @@ func BenchmarkFileIterator(b *testing.B) {
 				}
 
 				if kptr := ent.Key(); kptr.Pointer() {
-					_, _ = bi.ReadPointer(*kptr)
+					buf, _ = bi.AppendPointer(*kptr, buf[:0])
 				}
 				if vptr := ent.Value(); vptr.Pointer() {
-					_, _ = bi.ReadPointer(*vptr)
+					buf, _ = bi.AppendPointer(*vptr, buf[:0])
 				}
 			}
 		}

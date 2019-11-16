@@ -39,6 +39,14 @@ func (m *mem) iterClone() *mem {
 	}
 }
 
+func (m *mem) reset() {
+	m.data = m.data[:0]
+	m.heap = m.heap[:0]
+	for key := range m.keys {
+		delete(m.keys, key)
+	}
+}
+
 func (m *mem) Len() uint64 { return uint64(len(m.data)) }
 func (m *mem) Cap() uint64 { return m.cap }
 
@@ -155,7 +163,7 @@ func (m *mem) Next() (entry, error) {
 	var key []byte
 	if kptr.Pointer() {
 		var err error
-		key, err = m.ReadPointer(kptr)
+		key, err = m.slicePointer(kptr)
 		if err != nil {
 			return entry{}, err
 		}
@@ -171,11 +179,19 @@ func (m *mem) Next() (entry, error) {
 	return newEntry(kptr, kdata.vptr), nil
 }
 
-func (m *mem) ReadPointer(ptr inlinePtr) ([]byte, error) {
+func (m *mem) slicePointer(ptr inlinePtr) ([]byte, error) {
 	begin := ptr.Offset()
 	end := begin + uint64(ptr.Length())
 	if begin <= end && begin < uint64(len(m.data)) && end <= uint64(len(m.data)) {
 		return m.data[begin:end], nil
 	}
 	return nil, errs.New("invalid pointer read: %d[%d:%d]", len(m.data), begin, end)
+}
+
+func (m *mem) AppendPointer(ptr inlinePtr, buf []byte) ([]byte, error) {
+	data, err := m.slicePointer(ptr)
+	if err != nil {
+		return nil, err
+	}
+	return append(buf, data...), nil
 }

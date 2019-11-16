@@ -72,5 +72,5 @@ func (i *inlinePtr) SetOffset(offset uint64) {
 }
 
 type inlinePtrReader interface {
-	ReadPointer(ptr inlinePtr) ([]byte, error)
+	AppendPointer(ptr inlinePtr, buf []byte) ([]byte, error)
 }

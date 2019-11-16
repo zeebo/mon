@@ -17,7 +17,9 @@ type levelFiles struct {
 }
 
 type Options struct {
-	MemCap uint64
+	MemCap    uint64
+	NoWAL     bool
+	NoWALSync bool
 }
 
 type T struct {
@@ -51,29 +53,27 @@ func initT(t *T, dir string, opts Options) (err error) {
 	}
 	defer cl.Add(walFh.Close)
 
-	{
-		// TODO: boy does loading from the WAL do a lot of allocations
-
-		iter := newWALIterator(walFh)
-		for {
-			_, key, value, err := iter.Next()
-			if err == io.EOF {
-				break
-			} else if err != nil {
-				return errs.Wrap(err)
-			}
-			t.mem.SetString(string(key), value)
+	iter := newWALIterator(walFh)
+	for {
+		_, key, value, err := iter.Next()
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			return errs.Wrap(err)
 		}
-		if read, pref := iter.Consumed(); pref {
-			if err := walFh.Truncate(read); err != nil {
-				return errs.Wrap(err)
-			} else if err := walFh.Sync(); err != nil {
-				return errs.Wrap(err)
-			}
+		t.mem.SetString(string(key), value)
+	}
+	if read, pref := iter.Consumed(); pref {
+		if err := walFh.Truncate(read); err != nil {
+			return errs.Wrap(err)
+		} else if err := walFh.Sync(); err != nil {
+			return errs.Wrap(err)
 		}
 	}
 
-	t.wal = newWAL(walFh)
+	if !t.opts.NoWAL {
+		t.wal = newWAL(walFh, !t.opts.NoWALSync)
+	}
 
 	// TODO: load up entries and values
 
@@ -81,8 +81,10 @@ func initT(t *T, dir string, opts Options) (err error) {
 }
 
 func (t *T) Set(key string, value []byte) (err error) {
-	if err := t.wal.AddString(key, value); err != nil {
-		return err
+	if t.wal != nil {
+		if err := t.wal.AddString(key, value); err != nil {
+			return err
+		}
 	}
 	if t.mem.SetString(key, value) {
 		return nil
@@ -90,9 +92,16 @@ func (t *T) Set(key string, value []byte) (err error) {
 	return t.snapshotCompact()
 }
 
+func (t *T) CompactAndSync() (err error) {
+	if t.mem.Len() == 0 {
+		return nil
+	}
+	return t.snapshotCompact()
+}
+
 func (t *T) snapshotCompact() (err error) {
 	level := len(t.files)
-	iters := []mergeIter{t.mem.iterClone()}
+	iters := []mergeIter{t.mem.iterClone()} // TODO: remove this clone
 	for i, lf := range t.files {
 		if lf == nil {
 			level = i
@@ -147,7 +156,6 @@ func (t *T) snapshotCompact() (err error) {
 			return errs.Wrap(err)
 		})
 		valuesNameOld = valuesFh.Name()
-
 	} else {
 		valuesFh = t.files[level-1].values
 		if _, err := valuesFh.Seek(0, io.SeekEnd); err != nil {
@@ -160,17 +168,21 @@ func (t *T) snapshotCompact() (err error) {
 		return errs.Wrap(err)
 	}
 
-	// careful syncing is required because we don't want reordering to screw us
-
 	if err := writeFile(mg, entries, values); err != nil {
 		return errs.Wrap(err)
-	} else if err := os.Rename(entriesFh.Name(), entriesName); err != nil {
+	}
+
+	if err := os.Rename(entriesFh.Name(), entriesName); err != nil {
 		return errs.Wrap(err)
-	} else if err := t.syncDir(); err != nil {
+	}
+	if err := t.syncDir(); err != nil {
 		return errs.Wrap(err)
-	} else if err := os.Rename(valuesNameOld, valuesName); err != nil {
+	}
+
+	if err := os.Rename(valuesNameOld, valuesName); err != nil {
 		return errs.Wrap(err)
-	} else if err := t.syncDir(); err != nil {
+	}
+	if err := t.syncDir(); err != nil {
 		return errs.Wrap(err)
 	}
 
@@ -194,14 +206,16 @@ func (t *T) snapshotCompact() (err error) {
 
 		if err := lf.entries.Close(); err != nil {
 			return errs.Wrap(err)
-		} else if err := os.Remove(lf.entriesName); err != nil {
+		}
+		if err := os.Remove(lf.entriesName); err != nil {
 			return errs.Wrap(err)
 		}
 
 		if lf.values != newLevel.values {
 			if err := t.files[i].values.Close(); err != nil {
 				return errs.Wrap(err)
-			} else if err := os.Remove(lf.valuesName); err != nil {
+			}
+			if err := os.Remove(lf.valuesName); err != nil {
 				return errs.Wrap(err)
 			}
 		}
@@ -209,15 +223,17 @@ func (t *T) snapshotCompact() (err error) {
 		t.files[i] = nil
 	}
 
+	if t.wal != nil {
+		if err := t.wal.Truncate(); err != nil {
+			return errs.Wrap(err)
+		}
+	}
+
 	if err := t.syncDir(); err != nil {
-		return errs.Wrap(err)
-	} else if err := t.wal.Truncate(); err != nil {
-		return errs.Wrap(err)
-	} else if err := t.syncDir(); err != nil {
 		return errs.Wrap(err)
 	}
 
-	t.mem = newMem(t.opts.MemCap)
+	t.mem.reset()
 	return nil
 }
 
