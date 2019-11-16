@@ -22,7 +22,16 @@ func entryHeapElementLess(i, j *entryHeapElement) bool {
 		return false
 	}
 
-	if cmp := bytes.Compare(i.Key(), j.Key()); cmp == -1 {
+	ik := i.mkey
+	if ik == nil {
+		ik = i.ent.Key().InlineData()
+	}
+	jk := j.mkey
+	if jk == nil {
+		jk = j.ent.Key().InlineData()
+	}
+
+	if cmp := bytes.Compare(ik, jk); cmp == -1 {
 		return true
 	} else if cmp == 1 {
 		return false

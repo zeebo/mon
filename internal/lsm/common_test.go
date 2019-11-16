@@ -9,8 +9,12 @@ import (
 	"github.com/zeebo/assert"
 )
 
-func init() {
-	nullFile, _ = os.OpenFile(os.DevNull, os.O_RDWR|os.O_APPEND, 0644)
+func tempDir(tb testing.TB) (string, func()) {
+	dir, err := ioutil.TempDir("", "lsm-")
+	assert.NoError(tb, err)
+	return dir, func() {
+		assert.NoError(tb, os.RemoveAll(dir))
+	}
 }
 
 func tempFile(tb testing.TB) (*os.File, func()) {
@@ -22,14 +26,14 @@ func tempFile(tb testing.TB) (*os.File, func()) {
 	}
 }
 
-func tempHandle(tb testing.TB, cap int) (*handle, func()) {
+func tempWriteHandle(tb testing.TB, cap int) (*writeHandle, func()) {
 	fh, cleanup := tempFile(tb)
-	handle, err := newHandle(fh, cap)
+	wh, err := newWriteHandle(fh, cap)
 	if err != nil {
 		cleanup()
 		assert.NoError(tb, err)
 	}
-	return handle, cleanup
+	return wh, cleanup
 }
 
 func fileReset(tb testing.TB, fh *os.File) {
@@ -42,16 +46,16 @@ func fileSeekStart(tb testing.TB, fh *os.File) {
 	assert.NoError(tb, err)
 }
 
-func handleReset(tb testing.TB, h *handle) {
-	fileReset(tb, h.fh)
-	h.off = 0
-	h.buf = h.buf[:0]
+func writeHandleReset(tb testing.TB, wh *writeHandle) {
+	fileReset(tb, wh.fh)
+	wh.off = 0
+	wh.buf = wh.buf[:0]
 }
 
-func handleSeekStart(tb testing.TB, h *handle) {
-	fileSeekStart(tb, h.fh)
-	h.off = 0
-	h.buf = h.buf[:0]
+func writeHandleSeekStart(tb testing.TB, wh *writeHandle) {
+	fileSeekStart(tb, wh.fh)
+	wh.off = 0
+	wh.buf = wh.buf[:0]
 }
 
 func fileContents(t *testing.T, fh *os.File) []byte {

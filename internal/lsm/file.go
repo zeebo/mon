@@ -2,7 +2,6 @@ package lsm
 
 import (
 	"encoding/binary"
-	"unsafe"
 )
 
 // we want to support 64 bit sets persisted to disk. an update to a bitset requiring
@@ -40,20 +39,3 @@ func (h header) Level() uint32       { return binary.LittleEndian.Uint32(h[4:8])
 func (h header) Generation() uint64  { return binary.LittleEndian.Uint64(h[8:16]) }
 func (h header) NumEntries() uint32  { return binary.LittleEndian.Uint32(h[16:24]) }
 func (h header) EntryOffset() uint32 { return binary.LittleEndian.Uint32(h[24:32]) }
-
-//
-// lsm entry
-//
-
-type entry [32]byte
-
-const entrySize = 32
-
-func newEntry(kptr, vptr inlinePtr) (ent entry) {
-	copy(ent[0:16], kptr[:])
-	copy(ent[16:32], vptr[:])
-	return ent
-}
-
-func (e *entry) Key() *inlinePtr   { return (*inlinePtr)(unsafe.Pointer(&e[0])) }
-func (e *entry) Value() *inlinePtr { return (*inlinePtr)(unsafe.Pointer(&e[16])) }

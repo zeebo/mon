@@ -7,19 +7,19 @@ import (
 	"github.com/zeebo/errs"
 )
 
-type handle struct {
+type writeHandle struct {
 	fh  *os.File
 	off int64
 	buf []byte
 	cap int
 }
 
-func newHandle(fh *os.File, cap int) (*handle, error) {
-	var h handle
-	return &h, initHandle(&h, fh, cap)
+func newWriteHandle(fh *os.File, cap int) (*writeHandle, error) {
+	var h writeHandle
+	return &h, initWriteHandle(&h, fh, cap)
 }
 
-func initHandle(h *handle, fh *os.File, cap int) (err error) {
+func initWriteHandle(h *writeHandle, fh *os.File, cap int) (err error) {
 	h.off, err = fh.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return errs.Wrap(err)
@@ -31,9 +31,9 @@ func initHandle(h *handle, fh *os.File, cap int) (err error) {
 	return nil
 }
 
-func (h *handle) Offset() uint64 { return uint64(h.off) }
+func (h *writeHandle) Offset() uint64 { return uint64(h.off) }
 
-func (h *handle) Append(p []byte) (err error) {
+func (h *writeHandle) Append(p []byte) (err error) {
 	h.buf = append(h.buf, p...)
 	h.off += int64(len(p))
 
@@ -49,7 +49,7 @@ func (h *handle) Append(p []byte) (err error) {
 	return nil
 }
 
-func (h *handle) Flush() error {
+func (h *writeHandle) Flush() error {
 	if len(h.buf) == 0 {
 		return nil
 	}
@@ -62,6 +62,6 @@ func (h *handle) Flush() error {
 	return nil
 }
 
-func (h *handle) Sync() error {
+func (h *writeHandle) Sync() error {
 	return h.fh.Sync()
 }

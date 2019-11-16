@@ -57,7 +57,7 @@ func (i inlinePtr) Offset() uint64 { return binary.BigEndian.Uint64(i[8:]) & 0x0
 
 func (i inlinePtr) InlineData() []byte {
 	end := 3 + i.Length()
-	if end >= 3 && end < len(i) {
+	if i[0] == inlinePtr_Inline && end >= 3 && end < len(i) {
 		return i[3:end]
 	}
 	return nil

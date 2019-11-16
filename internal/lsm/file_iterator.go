@@ -1,6 +1,8 @@
 package lsm
 
 import (
+	"io"
+	"os"
 	"reflect"
 	"unsafe"
 
@@ -8,21 +10,24 @@ import (
 )
 
 type fileIterator struct {
-	entries *handle
-	values  *handle
+	entries *os.File
+	values  *os.File
 	rem     [32]byte
 	n       int
 }
 
-func newFileIterator(entries, values *handle) *fileIterator {
+func newFileIterator(entries, values *os.File) (*fileIterator, error) {
 	var f fileIterator
-	initFileIterator(&f, entries, values)
-	return &f
+	return &f, initFileIterator(&f, entries, values)
 }
 
-func initFileIterator(f *fileIterator, entries, values *handle) {
+func initFileIterator(f *fileIterator, entries, values *os.File) error {
+	if _, err := entries.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
 	f.entries = entries
 	f.values = values
+	return nil
 }
 
 func (fi *fileIterator) ReadEntries(buf []entry) (int, error) {
@@ -38,7 +43,7 @@ func (fi *fileIterator) ReadEntries(buf []entry) (int, error) {
 
 	for {
 		copy(byteBuf, fi.rem[:fi.n])
-		n, err := fi.entries.fh.Read(byteBuf[fi.n:])
+		n, err := fi.entries.Read(byteBuf[fi.n:])
 		n += fi.n
 		fi.n = copy(fi.rem[:], byteBuf[n&^31:n])
 
@@ -50,7 +55,7 @@ func (fi *fileIterator) ReadEntries(buf []entry) (int, error) {
 
 func (fi *fileIterator) ReadPointer(ptr inlinePtr) ([]byte, error) {
 	buf := make([]byte, ptr.Length())
-	n, err := fi.values.fh.ReadAt(buf, int64(ptr.Offset()))
+	n, err := fi.values.ReadAt(buf, int64(ptr.Offset()))
 	if n == len(buf) {
 		return buf, nil
 	} else if err == nil {

@@ -2,16 +2,22 @@ package lsm
 
 import (
 	"testing"
+
+	"github.com/zeebo/assert"
 )
 
 func BenchmarkWAL(b *testing.B) {
 	b.Run("AddString", func(b *testing.B) {
-		w := newWAL(nullFile, 1024)
-		b.SetBytes(int64(entrySize + 5))
+		fh, cleanup := tempFile(b)
+		defer cleanup()
+
+		w := newWAL(fh)
+		value := make([]byte, 128)
+		b.SetBytes(int64(entrySize + len(value)))
 		b.ReportAllocs()
 
 		for i := 0; i < b.N; i++ {
-			_, _ = w.AddString("hello", []byte("there"))
+			assert.NoError(b, w.AddString("hello", value))
 		}
 	})
 }

@@ -11,88 +11,94 @@ import (
 )
 
 func TestFileIterator(t *testing.T) {
-	var rng pcg.T
-	m := newMem(1 << 20)
-	for m.SetString(fmt.Sprint(rng.Uint32()), make([]byte, 128)) {
-	}
-
-	mg, err := newMerger([]mergeIter{m})
-	assert.NoError(t, err)
-
-	entries, cleanup := tempHandle(t, 4096)
-	defer cleanup()
-	values, cleanup := tempHandle(t, 4096)
-	defer cleanup()
-
-	assert.NoError(t, writeFile(mg, entries, values))
-
-	handleSeekStart(t, entries)
-	handleSeekStart(t, values)
-
-	fi := newFileIterator(entries, values)
-	bi := newBatchMergeIterAdapter(fi, 4096/32)
-	prev := ""
-
-	for {
-		ent, err := bi.Next()
-		if err == io.EOF {
-			break
+	t.Run("Basic", func(t *testing.T) {
+		var rng pcg.T
+		m := newMem(1 << 20)
+		for m.SetString(fmt.Sprint(rng.Uint32()), make([]byte, 128)) {
 		}
+
+		mg, err := newMerger([]mergeIter{m})
 		assert.NoError(t, err)
 
-		key := string(ent.Key().InlineData())
-		assert.That(t, prev < key)
-		prev = key
+		entries, cleanup := tempWriteHandle(t, 4096)
+		defer cleanup()
+		values, cleanup := tempWriteHandle(t, 4096)
+		defer cleanup()
 
-		data, err := bi.ReadPointer(*ent.Value())
+		assert.NoError(t, writeFile(mg, entries, values))
+
+		writeHandleSeekStart(t, entries)
+		writeHandleSeekStart(t, values)
+
+		fi, err := newFileIterator(entries.fh, values.fh)
 		assert.NoError(t, err)
-		assert.That(t, bytes.Equal(data, make([]byte, 128)))
-	}
-}
-
-func BenchmarkFileIterator(b *testing.B) {
-	var rng pcg.T
-	m := newMem(1 << 20)
-	for m.SetString(fmt.Sprint(rng.Uint32()), make([]byte, 128)) {
-	}
-
-	mg, err := newMerger([]mergeIter{m})
-	assert.NoError(b, err)
-
-	entries, cleanup := tempHandle(b, 4096)
-	defer cleanup()
-	values, cleanup := tempHandle(b, 4096)
-	defer cleanup()
-
-	assert.NoError(b, writeFile(mg, entries, values))
-
-	b.ReportAllocs()
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		b.StopTimer()
-		handleSeekStart(b, entries)
-		handleSeekStart(b, values)
-		fi := newFileIterator(entries, values)
 		bi := newBatchMergeIterAdapter(fi, 4096/32)
-		b.StartTimer()
+		prev := ""
 
 		for {
 			ent, err := bi.Next()
 			if err == io.EOF {
 				break
 			}
+			assert.NoError(t, err)
 
-			if kptr := ent.Key(); kptr.Pointer() {
-				_, _ = bi.ReadPointer(*kptr)
-			}
-			if vptr := ent.Value(); vptr.Pointer() {
-				_, _ = bi.ReadPointer(*vptr)
+			key := string(ent.Key().InlineData())
+			assert.That(t, prev < key)
+			prev = key
+
+			data, err := bi.ReadPointer(*ent.Value())
+			assert.NoError(t, err)
+			assert.That(t, bytes.Equal(data, make([]byte, 128)))
+		}
+	})
+}
+
+func BenchmarkFileIterator(b *testing.B) {
+	b.Run("Basic", func(b *testing.B) {
+		var rng pcg.T
+		m := newMem(1 << 20)
+		for m.SetString(fmt.Sprint(rng.Uint32()), make([]byte, 128)) {
+		}
+
+		mg, err := newMerger([]mergeIter{m})
+		assert.NoError(b, err)
+
+		entries, cleanup := tempWriteHandle(b, 4096)
+		defer cleanup()
+		values, cleanup := tempWriteHandle(b, 4096)
+		defer cleanup()
+
+		assert.NoError(b, writeFile(mg, entries, values))
+
+		b.ReportAllocs()
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			b.StopTimer()
+			writeHandleSeekStart(b, entries)
+			writeHandleSeekStart(b, values)
+			fi, err := newFileIterator(entries.fh, values.fh)
+			assert.NoError(b, err)
+			bi := newBatchMergeIterAdapter(fi, 4096/32)
+			b.StartTimer()
+
+			for {
+				ent, err := bi.Next()
+				if err == io.EOF {
+					break
+				}
+
+				if kptr := ent.Key(); kptr.Pointer() {
+					_, _ = bi.ReadPointer(*kptr)
+				}
+				if vptr := ent.Value(); vptr.Pointer() {
+					_, _ = bi.ReadPointer(*vptr)
+				}
 			}
 		}
-	}
 
-	entriesSize, _ := entries.fh.Seek(0, io.SeekEnd)
-	valuesSize, _ := values.fh.Seek(0, io.SeekEnd)
-	b.SetBytes(entriesSize + valuesSize)
+		entriesSize, _ := entries.fh.Seek(0, io.SeekEnd)
+		valuesSize, _ := values.fh.Seek(0, io.SeekEnd)
+		b.SetBytes(entriesSize + valuesSize)
+	})
 }
