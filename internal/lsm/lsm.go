@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/zeebo/errs"
 )
@@ -21,6 +22,15 @@ type Options struct {
 	NoWAL     bool
 	NoWALSync bool
 }
+
+var (
+	inserting time.Duration
+	writing   time.Duration
+)
+
+// type mem = btreeMem
+
+type mem = heapMem
 
 type T struct {
 	dir   string
@@ -42,7 +52,7 @@ func initT(t *T, dir string, opts Options) (err error) {
 
 	t.dir = dir
 	t.opts = opts
-	t.mem = newMem(opts.MemCap)
+	t.mem = (*mem).newMem(nil, opts.MemCap)
 
 	var cl cleaner
 	defer cl.Close(&err)
@@ -61,7 +71,7 @@ func initT(t *T, dir string, opts Options) (err error) {
 		} else if err != nil {
 			return errs.Wrap(err)
 		}
-		t.mem.SetString(string(key), value)
+		t.mem.SetBytes(key, value)
 	}
 	if read, pref := iter.Consumed(); pref {
 		if err := walFh.Truncate(read); err != nil {
@@ -80,13 +90,28 @@ func initT(t *T, dir string, opts Options) (err error) {
 	return nil
 }
 
-func (t *T) Set(key string, value []byte) (err error) {
+func (t *T) SetString(key string, value []byte) (err error) {
 	if t.wal != nil {
 		if err := t.wal.AddString(key, value); err != nil {
 			return err
 		}
 	}
 	if t.mem.SetString(key, value) {
+		return nil
+	}
+	return t.snapshotCompact()
+}
+
+func (t *T) SetBytes(key, value []byte) (err error) {
+	if t.wal != nil {
+		if err := t.wal.AddBytes(key, value); err != nil {
+			return err
+		}
+	}
+	now := time.Now()
+	ok := t.mem.SetBytes(key, value)
+	inserting += time.Since(now)
+	if ok {
 		return nil
 	}
 	return t.snapshotCompact()
@@ -101,7 +126,8 @@ func (t *T) CompactAndSync() (err error) {
 
 func (t *T) snapshotCompact() (err error) {
 	level := len(t.files)
-	iters := []mergeIter{t.mem.iterClone()} // TODO: remove this clone
+	iter := t.mem.iter()
+	iters := []mergeIter{&iter}
 	for i, lf := range t.files {
 		if lf == nil {
 			level = i
@@ -144,6 +170,7 @@ func (t *T) snapshotCompact() (err error) {
 
 	var valuesFh *os.File
 	var valuesNameOld string
+	var now time.Time
 
 	if level == 0 {
 		valuesFh, err = os.Create(valuesName + ".tmp")
@@ -156,6 +183,7 @@ func (t *T) snapshotCompact() (err error) {
 			return errs.Wrap(err)
 		})
 		valuesNameOld = valuesFh.Name()
+		now = time.Now()
 	} else {
 		valuesFh = t.files[level-1].values
 		if _, err := valuesFh.Seek(0, io.SeekEnd); err != nil {
@@ -168,8 +196,18 @@ func (t *T) snapshotCompact() (err error) {
 		return errs.Wrap(err)
 	}
 
+	// fmt.Print("level ", level, " ")
+
 	if err := writeFile(mg, entries, values); err != nil {
 		return errs.Wrap(err)
+	}
+
+	if level == 0 {
+		dur := time.Since(now)
+		writing += dur
+		// fmt.Println("dur ", dur)
+	} else {
+		// fmt.Println()
 	}
 
 	if err := os.Rename(entriesFh.Name(), entriesName); err != nil {

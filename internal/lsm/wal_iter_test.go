@@ -17,6 +17,7 @@ func TestWALIter(t *testing.T) {
 		assert.NoError(t, w.AddString("0", []byte("0")))
 		assert.NoError(t, w.AddString("1", nil))
 		assert.NoError(t, w.AddString("2", []byte("2")))
+		assert.NoError(t, w.Flush())
 
 		fileSeekStart(t, fh)
 		wi := newWALIterator(fh)
@@ -65,6 +66,7 @@ func TestWALIter(t *testing.T) {
 		w := newWAL(fh, false)
 		assert.NoError(t, w.AddString("0", []byte("0")))
 		assert.NoError(t, w.AddString("01235", []byte("01235")))
+		assert.NoError(t, w.Flush())
 
 		wi := newWALIterator(bytes.NewReader(fileContents(t, fh)[:62]))
 

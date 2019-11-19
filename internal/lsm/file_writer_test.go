@@ -12,7 +12,7 @@ import (
 func TestFileWriter(t *testing.T) {
 	t.Run("Basic", func(t *testing.T) {
 		var rng pcg.T
-		m := newMem(4096)
+		m := newHeapMem(4096)
 		for m.SetString(fmt.Sprint(rng.Uint32()), []byte(fmt.Sprint(rng.Uint32()))) {
 		}
 
@@ -31,7 +31,7 @@ func TestFileWriter(t *testing.T) {
 func BenchmarkFileWriter(b *testing.B) {
 	b.Run("Basic", func(b *testing.B) {
 		var rng pcg.T
-		m := newMem(1 << 20)
+		m := newHeapMem(1 << 20)
 		for m.SetString(fmt.Sprint(rng.Uint32()), make([]byte, 128)) {
 		}
 
@@ -47,7 +47,8 @@ func BenchmarkFileWriter(b *testing.B) {
 			b.StopTimer()
 			writeHandleReset(b, entries)
 			writeHandleReset(b, values)
-			mg, err := newMerger([]mergeIter{m.iterClone()})
+			mi := m.iter()
+			mg, err := newMerger([]mergeIter{&mi})
 			assert.NoError(b, err)
 			b.StartTimer()
 

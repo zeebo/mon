@@ -5,8 +5,11 @@ import (
 	"os"
 )
 
+const walBufSize = 4096
+
 type wal struct {
 	fh   *os.File
+	buf  []byte
 	sync bool
 }
 
@@ -18,6 +21,7 @@ func newWAL(fh *os.File, sync bool) *wal {
 
 func initWal(w *wal, fh *os.File, sync bool) {
 	w.fh = fh
+	w.buf = make([]byte, 0, walBufSize)
 	w.sync = sync
 }
 
@@ -30,23 +34,12 @@ func (w *wal) Truncate() error {
 	return nil
 }
 
-func (w *wal) AddString(key string, value []byte) error {
-	ent := newEntry(newInlinePtrString(key), newInlinePtrBytes(value))
+func (w *wal) Flush() error {
+	_, err := w.fh.Write(w.buf)
+	w.buf = w.buf[:0]
 
-	if _, err := w.fh.Write(ent[:]); err != nil {
+	if err != nil {
 		return err
-	}
-
-	if ent.Key().Pointer() {
-		if _, err := w.fh.WriteString(key); err != nil {
-			return err
-		}
-	}
-
-	if ent.Value().Pointer() {
-		if _, err := w.fh.Write(value); err != nil {
-			return err
-		}
 	}
 
 	if w.sync {
@@ -54,6 +47,37 @@ func (w *wal) AddString(key string, value []byte) error {
 			return err
 		}
 	}
+	return nil
+}
 
+func (w *wal) AddString(key string, value []byte) error {
+	ent := newEntry(newInlinePtrString(key), newInlinePtrBytes(value))
+
+	w.buf = append(w.buf, ent[:]...)
+	if ent.Key().Pointer() {
+		w.buf = append(w.buf, key...)
+	}
+	if ent.Value().Pointer() {
+		w.buf = append(w.buf, value...)
+	}
+	if len(w.buf) >= walBufSize || w.sync {
+		return w.Flush()
+	}
+	return nil
+}
+
+func (w *wal) AddBytes(key, value []byte) error {
+	ent := newEntry(newInlinePtrBytes(key), newInlinePtrBytes(value))
+
+	w.buf = append(w.buf, ent[:]...)
+	if ent.Key().Pointer() {
+		w.buf = append(w.buf, key...)
+	}
+	if ent.Value().Pointer() {
+		w.buf = append(w.buf, value...)
+	}
+	if len(w.buf) >= walBufSize || w.sync {
+		return w.Flush()
+	}
 	return nil
 }

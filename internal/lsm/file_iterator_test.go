@@ -13,7 +13,7 @@ import (
 func TestFileIterator(t *testing.T) {
 	t.Run("Basic", func(t *testing.T) {
 		var rng pcg.T
-		m := newMem(1 << 20)
+		m := newHeapMem(1 << 20)
 		for m.SetString(fmt.Sprint(rng.Uint32()), make([]byte, 128)) {
 		}
 
@@ -56,7 +56,7 @@ func TestFileIterator(t *testing.T) {
 func BenchmarkFileIterator(b *testing.B) {
 	b.Run("Basic", func(b *testing.B) {
 		var rng pcg.T
-		m := newMem(1 << 20)
+		m := newHeapMem(1 << 20)
 		for m.SetString(fmt.Sprint(rng.Uint32()), make([]byte, 128)) {
 		}
 
