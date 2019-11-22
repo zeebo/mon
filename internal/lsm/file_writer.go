@@ -1,60 +1,31 @@
 package lsm
 
-import (
-	"io"
-)
+import "time"
 
-func writeFile(mg *merger, entries, values *writeHandle) error {
-	forceWrite := len(mg.iters) == 1
-	skipWrite := len(mg.iters) - 1
-	var valueBuf []byte
+func writeFile(mi iterator, entries, values *writeHandle) error {
+	var now time.Time
+	if trackStats {
+		now = time.Now()
+	}
 
-	entriesCtr, valuesCtr := 0, 0
-
-	for {
-		ele, r, err := mg.Next()
-		if err == io.EOF {
-			break
-		} else if err != nil {
+	for mi.Next() {
+		ent := mi.Entry()
+		if err := entries.Append(ent[:]); err != nil {
 			return err
 		}
-
-		if forceWrite || ele.idx != skipWrite {
-			if kptr := ele.ent.Key(); kptr.Pointer() {
-				kptr.SetOffset(values.Offset())
-				key := ele.mkey
-				if key == nil {
-					key = ele.ent.Key().InlineData()
-				}
-				if err := values.Append(key); err != nil {
-					return err
-				}
-				valuesCtr++
-			}
-			if vptr := ele.ent.Value(); vptr.Pointer() {
-				var value []byte
-				if vptr.Pointer() {
-					value, err = r.AppendPointer(*vptr, valueBuf[:0])
-					if err != nil {
-						return err
-					}
-					valueBuf = value[:0]
-				} else if vptr.Inline() {
-					value = vptr.InlineData()
-				}
-
-				vptr.SetOffset(values.Offset())
-				if err := values.Append(value); err != nil {
-					return err
-				}
-				valuesCtr++
+		if ent.Key().Pointer() {
+			if err := values.Append(mi.Key()); err != nil {
+				return err
 			}
 		}
-
-		if err := entries.Append(ele.ent[:]); err != nil {
-			return err
+		if ent.Value().Pointer() {
+			if err := values.Append(mi.Value()); err != nil {
+				return err
+			}
 		}
-		entriesCtr++
+	}
+	if err := mi.Err(); err != nil {
+		return err
 	}
 
 	if err := entries.Flush(); err != nil {
@@ -67,7 +38,8 @@ func writeFile(mg *merger, entries, values *writeHandle) error {
 		return err
 	}
 
-	// fmt.Print("entries ", entriesCtr, " values ", valuesCtr, " ")
-
+	if trackStats {
+		writing += time.Since(now)
+	}
 	return nil
 }

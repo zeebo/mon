@@ -1,107 +1,153 @@
 package lsm
 
 import (
-	"io"
-
-	"github.com/zeebo/errs"
+	"bytes"
+	"math/bits"
 )
 
-type mergeIter interface {
-	inlinePtrReader
-
-	Next() (entry, error)
-}
-
 type merger struct {
-	iters []mergeIter
-	eh    entryHeap
-	prev  struct {
-		key []byte
-		ptr inlinePtr
-	}
+	iters []iterator
+	trn   []int
+	win   int
+	first bool
+	last  []byte
+	err   error
 }
 
-func (m *merger) prevKey() []byte {
-	if m.prev.key != nil {
-		return m.prev.key
-	}
-	return m.prev.ptr.InlineData()
+func newMerger(iters []iterator) *merger {
+	var m merger
+	initMerger(&m, iters)
+	return &m
 }
 
-func newMerger(iters []mergeIter) (*merger, error) {
-	var mi merger
-	err := initMerger(&mi, iters)
-	return &mi, err
-}
+func initMerger(m *merger, iters []iterator) {
+	leaves := 1 << uint(bits.Len(uint(len(iters)-1)))
+	trn := make([]int, leaves-1)
+	wins := make([]int, 2*leaves-1)
 
-func initMerger(m *merger, iters []mergeIter) error {
-	eles := make([]entryHeapElement, 0, len(iters))
-	for idx, iter := range iters {
-		var ele entryHeapElement
-		ok, err := m.readElement(iter, &ele)
-		if err != nil {
-			return err
-		} else if ok {
-			ele.idx = idx
-			eles = append(eles, ele)
+	for i := range wins {
+		wins[i] = i
+
+		if uint(i) < uint(len(iters)) {
+			if iter := iters[i]; !iter.Next() {
+				if m.err = iter.Err(); m.err != nil {
+					return
+				}
+				iters[i] = nil
+			}
 		}
 	}
 
-	initEntryHeap(&m.eh, eles)
+	for i := range trn {
+		l, r := wins[2*i], wins[2*i+1]
+
+		if uint(l) >= uint(len(iters)) || iters[l] == nil {
+			goto noSwap
+		} else if uint(r) >= uint(len(iters)) || iters[r] == nil {
+			// swap
+		} else if cmp := bytes.Compare(iters[l].Key(), iters[r].Key()); cmp < 0 || (cmp == 0 && l < r) {
+			// swap
+		} else {
+			goto noSwap
+		}
+
+		r, l = l, r
+
+	noSwap:
+		trn[i] = l
+		wins[leaves+i] = r
+	}
+
 	m.iters = iters
-	return nil
+	m.trn = trn
+	m.win = wins[len(wins)-1]
+
+	if uint(m.win) < uint(len(iters)) && iters[m.win] != nil {
+		m.last = append(m.last, iters[m.win].Key()...)
+	}
 }
 
-func (m *merger) readElement(iter mergeIter, ele *entryHeapElement) (ok bool, err error) {
-	ele.ent, err = iter.Next()
-	if err == io.EOF {
-		return false, nil
-	} else if err != nil {
-		return false, err
-	}
+func (m *merger) Err() error { return m.err }
 
-	if kptr := ele.ent.Key(); kptr.Pointer() {
-		ele.mkey, err = iter.AppendPointer(*kptr, nil) // sadness
-		if err != nil {
-			return false, err
-		}
+func (m *merger) Entry() (e entry) {
+	if uint(m.win) < uint(len(m.iters)) {
+		e = m.iters[m.win].Entry()
 	}
-
-	return true, nil
+	return
 }
 
-func (m *merger) Next() (ele entryHeapElement, r inlinePtrReader, err error) {
+func (m *merger) Key() (k []byte) {
+	if uint(m.win) < uint(len(m.iters)) {
+		k = m.iters[m.win].Key()
+	}
+	return
+}
+
+func (m *merger) Value() (v []byte) {
+	if uint(m.win) < uint(len(m.iters)) {
+		v = m.iters[m.win].Value()
+	}
+	return
+}
+
+func (m *merger) Next() bool {
+	if m.err != nil {
+		return false
+	}
+
+	iters, trn, win := m.iters, m.trn, m.win
+
 again:
-	ele, ok := m.eh.Pop()
-	if !ok {
-		return entryHeapElement{}, nil, io.EOF
+	if uint(win) >= uint(len(iters)) || iters[win] == nil {
+		return false
 	}
 
-	if ele.idx < 0 || ele.idx >= len(m.iters) {
-		return entryHeapElement{}, nil, errs.New("invalid iterator state")
+	if !m.first {
+		m.first = true
+		return true
 	}
 
-	iter := m.iters[ele.idx]
-	var nele entryHeapElement
-	ok, err = m.readElement(iter, &nele)
-	if err != nil {
-		return entryHeapElement{}, nil, err
-	} else if ok {
-		nele.idx = ele.idx
-		m.eh.Push(nele)
-	}
+	var wkey []byte
 
-	if !m.prev.ptr.Null() && m.prev.ptr.Prefix() == ele.ent.Key().Prefix() {
-		key := ele.mkey
-		if key == nil {
-			key = ele.ent.Key().InlineData()
+	if iter := iters[win]; !iter.Next() {
+		if m.err = iter.Err(); m.err != nil {
+			return false
 		}
-		if string(key) == string(m.prevKey()) {
-			goto again
-		}
+		iters[win] = nil
+	} else {
+		wkey = iter.Key()
 	}
 
-	m.prev.key = ele.mkey
-	m.prev.ptr = *ele.ent.Key()
-	return ele, iter, nil
+	offset := (len(trn) + 1) / 2
+	for idx := win / 2; uint(idx) < uint(len(trn)); idx = offset + idx/2 {
+		var ckey []byte
+		chal := trn[idx]
+
+		if uint(chal) >= uint(len(iters)) || iters[chal] == nil {
+			goto noSwap
+		} else if ckey = iters[chal].Key(); uint(win) >= uint(len(iters)) || iters[win] == nil {
+			// swap
+		} else if cmp := bytes.Compare(ckey, wkey); cmp == -1 || (cmp == 0 && chal < win) {
+			// swap
+		} else {
+			goto noSwap
+		}
+
+		trn[idx], win, wkey = win, chal, ckey
+
+	noSwap:
+	}
+
+	m.win = win
+
+	if uint(win) >= uint(len(iters)) || iters[win] == nil {
+		return false
+	}
+
+	if bytes.Equal(m.last, wkey) {
+		goto again
+	}
+	m.last = append(m.last[:0], wkey...)
+
+	return true
 }

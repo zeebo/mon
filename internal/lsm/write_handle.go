@@ -1,52 +1,61 @@
 package lsm
 
 import (
-	"io"
-	"os"
-
-	"github.com/zeebo/errs"
+	"sync/atomic"
+	"time"
 )
 
 type writeHandle struct {
-	fh  *os.File
+	fh  file
 	off int64
-	buf []byte
 	cap int
+	buf []byte
 }
 
-func newWriteHandle(fh *os.File, cap int) (*writeHandle, error) {
-	var h writeHandle
-	return &h, initWriteHandle(&h, fh, cap)
+func newWriteHandle(fh file, cap int) *writeHandle {
+	var wh writeHandle
+	initWriteHandle(&wh, fh, make([]byte, 0, cap))
+	return &wh
 }
 
-func initWriteHandle(h *writeHandle, fh *os.File, cap int) (err error) {
-	h.off, err = fh.Seek(0, io.SeekCurrent)
-	if err != nil {
-		return errs.Wrap(err)
-	}
-
-	h.fh = fh
-	h.buf = make([]byte, 0, cap)
-	h.cap = cap
-	return nil
+func newWriteHandleBuf(fh file, buf []byte) *writeHandle {
+	var wh writeHandle
+	initWriteHandle(&wh, fh, buf[:0])
+	return &wh
 }
 
-func (h *writeHandle) Offset() uint64 { return uint64(h.off) }
+func initWriteHandle(wh *writeHandle, fh file, buf []byte) {
+	wh.fh = fh
+	wh.cap = cap(buf)
+	wh.buf = buf
+}
+
+func (h *writeHandle) Written() uint64 { return uint64(h.off) }
 
 func (h *writeHandle) Append(p []byte) (err error) {
+	if len(h.buf)+len(p) > cap(h.buf) {
+		size := h.cap
+		if size > len(h.buf) {
+			size = len(h.buf)
+		}
+
+		var s time.Time
+		if trackStats {
+			s = time.Now()
+		}
+		var n int
+		n, err = h.fh.Write(h.buf[:size])
+		if trackStats {
+			atomic.AddInt64(&writtenDur, time.Since(s).Nanoseconds())
+			atomic.AddInt64(&written, int64(n))
+		}
+
+		h.buf = h.buf[:copy(h.buf, h.buf[size:]):cap(h.buf)]
+	}
+
 	h.buf = append(h.buf, p...)
 	h.off += int64(len(p))
-
-	if len(h.buf) < h.cap {
-		return nil
-	}
-
-	if _, err = h.fh.Write(h.buf); err != nil {
-		return err
-	}
-
-	h.buf = h.buf[:0]
-	return nil
+	return err
 }
 
 func (h *writeHandle) Flush() error {

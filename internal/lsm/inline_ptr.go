@@ -70,7 +70,3 @@ func (i *inlinePtr) SetOffset(offset uint64) {
 	i[14] = byte(offset >> 8)
 	i[15] = byte(offset)
 }
-
-type inlinePtrReader interface {
-	AppendPointer(ptr inlinePtr, buf []byte) ([]byte, error)
-}

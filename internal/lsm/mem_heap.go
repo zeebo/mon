@@ -1,10 +1,7 @@
 package lsm
 
 import (
-	"io"
 	"unsafe"
-
-	"github.com/zeebo/errs"
 )
 
 type heapMem struct {
@@ -12,6 +9,10 @@ type heapMem struct {
 	heap []entry
 	keys map[string]*entry
 	data []byte
+
+	ent entry
+	key []byte
+	val []byte
 }
 
 func newHeapMem(cap uint64) *heapMem {
@@ -33,7 +34,7 @@ func initHeapMem(m *heapMem, cap uint64) {
 func (m *heapMem) iter() heapMem {
 	return heapMem{
 		cap:  m.cap,
-		heap: m.heap,
+		heap: append([]entry(nil), m.heap...),
 		keys: m.keys,
 		data: m.data,
 	}
@@ -200,35 +201,46 @@ next:
 	}
 }
 
-func (m *heapMem) Next() (entry, error) {
+func (m *heapMem) Next() bool {
 	heap := m.heap
 
 	if len(heap) == 0 {
-		return entry{}, io.EOF
+		return false
 	}
 
 	n := len(heap) - 1
-	ent := heap[0]
+	m.ent = heap[0]
 	heap[0] = heap[n]
 	m.heapDown(heap)
 	m.heap = heap[:n]
 
-	return ent, nil
+	switch kptr := m.ent.Key(); kptr[0] {
+	case inlinePtr_Inline:
+		m.key = append(m.key[:0], kptr.InlineData()...)
+	case inlinePtr_Pointer:
+		begin := kptr.Offset()
+		end := begin + uint64(kptr.Length())
+		m.key = m.data[begin:end]
+	case inlinePtr_Null:
+		m.key = nil
+	}
+
+	switch vptr := m.ent.Value(); vptr[0] {
+	case inlinePtr_Inline:
+		m.val = append(m.val[:0], vptr.InlineData()...)
+	case inlinePtr_Pointer:
+		begin := vptr.Offset()
+		end := begin + uint64(vptr.Length())
+		m.val = m.data[begin:end]
+	case inlinePtr_Null:
+		m.val = nil
+	}
+
+	return true
 }
 
-func (m *heapMem) slicePointer(ptr inlinePtr) ([]byte, error) {
-	begin := ptr.Offset()
-	end := begin + uint64(ptr.Length())
-	if begin <= end && begin < uint64(len(m.data)) && end <= uint64(len(m.data)) {
-		return m.data[begin:end], nil
-	}
-	return nil, errs.New("invalid pointer read: %d[%d:%d]", len(m.data), begin, end)
-}
+func (m *heapMem) Entry() entry  { return m.ent }
+func (m *heapMem) Key() []byte   { return m.key }
+func (m *heapMem) Value() []byte { return m.val }
 
-func (m *heapMem) AppendPointer(ptr inlinePtr, buf []byte) ([]byte, error) {
-	data, err := m.slicePointer(ptr)
-	if err != nil {
-		return nil, err
-	}
-	return append(buf, data...), nil
-}
+func (m *heapMem) Err() error { return nil }

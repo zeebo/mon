@@ -1,8 +1,6 @@
 package lsm
 
 import (
-	"io"
-
 	"github.com/zeebo/errs"
 )
 
@@ -13,14 +11,10 @@ type btreeIterator struct {
 	i     uint16
 	buf   []byte
 	vptrs []inlinePtr
-}
 
-func (i *btreeIterator) Next() (entry, error) {
-	if !i.Advance() {
-		return entry{}, io.EOF
-	}
-	bent := i.n.payload[i.i]
-	return newEntry(bent.kptr, i.vptrs[bent.val]), nil
+	ent entry
+	key []byte
+	val []byte
 }
 
 func (i *btreeIterator) AppendPointer(ptr inlinePtr, buf []byte) ([]byte, error) {
@@ -32,8 +26,7 @@ func (i *btreeIterator) AppendPointer(ptr inlinePtr, buf []byte) ([]byte, error)
 	return nil, errs.New("invalid pointer read: %d[%d:%d]", len(i.buf), begin, end)
 }
 
-// Advance advances the btreeIterator and returns true if there is an entry.
-func (i *btreeIterator) Advance() bool {
+func (i *btreeIterator) Next() bool {
 	if i.n == nil {
 		return false
 	}
@@ -41,6 +34,7 @@ func (i *btreeIterator) Advance() bool {
 
 next:
 	if i.i < i.n.count {
+		i.cache()
 		return true
 	}
 
@@ -53,3 +47,35 @@ next:
 	i.i = 0
 	goto next
 }
+
+func (i *btreeIterator) cache() {
+	bent := i.n.payload[i.i]
+	i.ent = newEntry(bent.kptr, i.vptrs[bent.val])
+
+	switch kptr := i.ent.Key(); kptr[0] {
+	case inlinePtr_Inline:
+		i.key = append(i.key[:0], kptr.InlineData()...)
+	case inlinePtr_Pointer:
+		begin := kptr.Offset()
+		end := begin + uint64(kptr.Length())
+		i.key = i.buf[begin:end]
+	case inlinePtr_Null:
+		i.key = nil
+	}
+
+	switch vptr := i.ent.Value(); vptr[0] {
+	case inlinePtr_Inline:
+		i.val = append(i.val[:0], vptr.InlineData()...)
+	case inlinePtr_Pointer:
+		begin := vptr.Offset()
+		end := begin + uint64(vptr.Length())
+		i.val = i.buf[begin:end]
+	case inlinePtr_Null:
+		i.val = nil
+	}
+}
+
+func (i *btreeIterator) Entry() entry  { return i.ent }
+func (i *btreeIterator) Key() []byte   { return i.key }
+func (i *btreeIterator) Value() []byte { return i.val }
+func (i *btreeIterator) Err() error    { return nil }

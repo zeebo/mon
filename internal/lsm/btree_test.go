@@ -33,7 +33,7 @@ func TestBtree(t *testing.T) {
 	}
 
 	iter := bt.Iterator(buf, vptrs)
-	for iter.Advance() {
-		// fmt.Println(string(iter.Entry().Key().InlineData()))
+	for iter.Next() {
+		// fmt.Println(iter.Entry(), string(iter.Key()), string(iter.Value()))
 	}
 }

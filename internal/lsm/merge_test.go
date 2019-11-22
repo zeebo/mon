@@ -1,56 +1,33 @@
 package lsm
 
 import (
-	"io"
 	"testing"
 
 	"github.com/zeebo/assert"
-	"github.com/zeebo/errs"
 )
 
 func TestMergedIterator(t *testing.T) {
-	mk := func(key string) entry { return newEntry(newInlinePtrString(key), inlinePtr{}) }
-	mks := func(keys ...string) (out *fakeMergeIterator) {
-		out = new(fakeMergeIterator)
-		for _, key := range keys {
-			*out = append(*out, mk(key))
-		}
-		return out
-	}
-
 	t.Run("Basic", func(t *testing.T) {
-		expect := "059abcdrst"
-		mi, err := newMerger([]mergeIter{
-			mks("a", "b", "c", "d"),
-			mks("r", "s", "t"),
-			mks(),
-			mks("0", "5", "9"),
-			mks("5", "a", "t"),
+		var (
+			keys   = "059acdeqrstuz"
+			values = "DDDAABADBBEBD"
+		)
+
+		mi := newMerger([]iterator{
+			newFakeIter("A", "a", "c", "e"),
+			newFakeIter("B", "d", "r", "s", "u"),
+			newFakeIter("C"),
+			newFakeIter("D", "0", "5", "9", "q", "z"),
+			newFakeIter("E", "5", "a", "t", "u"),
 		})
-		assert.NoError(t, err)
 
-		for i := 0; i < len(expect); i++ {
-			ele, _, err := mi.Next()
-			assert.NoError(t, err)
-			assert.Equal(t, string(ele.testKey()), expect[i:i+1])
+		for mi.Next() {
+			assert.Equal(t, string(mi.Key()), keys[0:1])
+			assert.Equal(t, string(mi.Value()), values[0:1])
+			keys, values = keys[1:], values[1:]
 		}
-
-		_, _, err = mi.Next()
-		assert.Equal(t, err, io.EOF)
+		assert.NoError(t, mi.Err())
+		assert.Equal(t, keys, "")
+		assert.Equal(t, values, "")
 	})
-}
-
-type fakeMergeIterator []entry
-
-func (f *fakeMergeIterator) AppendPointer(ptr inlinePtr, buf []byte) ([]byte, error) {
-	return nil, errs.New("unimplemented")
-}
-
-func (f *fakeMergeIterator) Next() (entry, error) {
-	if len(*f) == 0 {
-		return entry{}, io.EOF
-	}
-	ent := (*f)[0]
-	*f = (*f)[1:]
-	return ent, nil
 }

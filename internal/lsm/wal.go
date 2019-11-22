@@ -2,27 +2,32 @@ package lsm
 
 import (
 	"io"
-	"os"
+	"sync/atomic"
+	"time"
 )
 
-const walBufSize = 4096
-
 type wal struct {
-	fh   *os.File
+	fh   file
+	cap  int
 	buf  []byte
 	sync bool
 }
 
-func newWAL(fh *os.File, sync bool) *wal {
+func newWAL(fh file, sync bool) *wal {
 	var w wal
 	initWal(&w, fh, sync)
 	return &w
 }
 
-func initWal(w *wal, fh *os.File, sync bool) {
+func initWal(w *wal, fh file, sync bool) {
 	w.fh = fh
-	w.buf = make([]byte, 0, walBufSize)
+	w.cap = bufferSize
+	w.buf = make([]byte, 0, bufferSize)
 	w.sync = sync
+}
+
+func (w *wal) Close() error {
+	return w.fh.Close()
 }
 
 func (w *wal) Truncate() error {
@@ -35,8 +40,22 @@ func (w *wal) Truncate() error {
 }
 
 func (w *wal) Flush() error {
-	_, err := w.fh.Write(w.buf)
-	w.buf = w.buf[:0]
+	size := w.cap
+	if size > len(w.buf) {
+		size = len(w.buf)
+	}
+
+	var s time.Time
+	if trackStats {
+		s = time.Now()
+	}
+	n, err := w.fh.Write(w.buf[:size])
+	if trackStats {
+		atomic.AddInt64(&writtenDur, time.Since(s).Nanoseconds())
+		atomic.AddInt64(&written, int64(n))
+	}
+
+	w.buf = w.buf[:copy(w.buf, w.buf[size:]):cap(w.buf)]
 
 	if err != nil {
 		return err
@@ -51,7 +70,9 @@ func (w *wal) Flush() error {
 }
 
 func (w *wal) AddString(key string, value []byte) error {
-	ent := newEntry(newInlinePtrString(key), newInlinePtrBytes(value))
+	ent := newEntry(
+		newInlinePtrString(key),
+		newInlinePtrBytes(value))
 
 	w.buf = append(w.buf, ent[:]...)
 	if ent.Key().Pointer() {
@@ -60,14 +81,16 @@ func (w *wal) AddString(key string, value []byte) error {
 	if ent.Value().Pointer() {
 		w.buf = append(w.buf, value...)
 	}
-	if len(w.buf) >= walBufSize || w.sync {
+	if len(w.buf) >= bufferSize || w.sync {
 		return w.Flush()
 	}
 	return nil
 }
 
 func (w *wal) AddBytes(key, value []byte) error {
-	ent := newEntry(newInlinePtrBytes(key), newInlinePtrBytes(value))
+	ent := newEntry(
+		newInlinePtrBytes(key),
+		newInlinePtrBytes(value))
 
 	w.buf = append(w.buf, ent[:]...)
 	if ent.Key().Pointer() {
@@ -76,7 +99,7 @@ func (w *wal) AddBytes(key, value []byte) error {
 	if ent.Value().Pointer() {
 		w.buf = append(w.buf, value...)
 	}
-	if len(w.buf) >= walBufSize || w.sync {
+	if len(w.buf) >= bufferSize || w.sync {
 		return w.Flush()
 	}
 	return nil

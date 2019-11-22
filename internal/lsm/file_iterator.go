@@ -1,70 +1,78 @@
 package lsm
 
-import (
-	"io"
-	"os"
-	"reflect"
-	"unsafe"
-
-	"github.com/zeebo/errs"
-)
-
 type fileIterator struct {
-	entries *os.File
-	values  *os.File
-	rem     [32]byte
-	n       int
+	err       error
+	entBuffer buffer
+	valBuffer buffer
+	ent       entry
+	key       []byte
+	val       []byte
 }
 
-func newFileIterator(entries, values *os.File) (*fileIterator, error) {
-	var f fileIterator
-	return &f, initFileIterator(&f, entries, values)
+func newFileIterator(entries, values file) *fileIterator {
+	var fi fileIterator
+	initFileIterator(&fi, entries, values)
+	return &fi
 }
 
-func initFileIterator(f *fileIterator, entries, values *os.File) error {
-	if _, err := entries.Seek(0, io.SeekStart); err != nil {
-		return err
+func initFileIterator(fi *fileIterator, entries, values file) {
+	initBuffer(&fi.entBuffer, entries, bufferSize)
+	initBuffer(&fi.valBuffer, values, bufferSize)
+}
+
+func (fi *fileIterator) Next() bool {
+	if fi.err != nil {
+		return false
 	}
-	f.entries = entries
-	f.values = values
-	return nil
-}
 
-func (fi *fileIterator) ReadEntries(buf []entry) (int, error) {
-	if len(buf) == 0 {
-		return 0, nil
+	buf, ok := fi.entBuffer.Read(entrySize)
+	if !ok {
+		fi.err = fi.entBuffer.Err()
+		return false
 	}
+	copy(fi.ent[:], buf)
 
-	byteBuf := *(*[]byte)(unsafe.Pointer(&reflect.SliceHeader{
-		Data: uintptr(unsafe.Pointer(&buf[0])),
-		Len:  len(buf) * entrySize,
-		Cap:  cap(buf) * entrySize,
-	}))
-
-	for {
-		copy(byteBuf, fi.rem[:fi.n])
-		n, err := fi.entries.Read(byteBuf[fi.n:])
-		n += fi.n
-		fi.n = copy(fi.rem[:], byteBuf[n&^31:n])
-
-		if n/32 > 0 || err != nil {
-			return n / 32, err
+	switch kptr := fi.ent.Key(); kptr[0] {
+	case inlinePtr_Inline:
+		fi.key = append(fi.key[:0], kptr.InlineData()...)
+	case inlinePtr_Pointer:
+		key, ok := fi.valBuffer.Read(kptr.Length())
+		if !ok {
+			fi.err = fi.valBuffer.Err()
+			return false
 		}
-	}
-}
-
-func (fi *fileIterator) AppendPointer(ptr inlinePtr, buf []byte) ([]byte, error) {
-	if l := ptr.Length(); cap(buf) < l {
-		buf = make([]byte, l)
-	} else {
-		buf = buf[:l]
+		fi.key = append(fi.key[:0], key...)
 	}
 
-	n, err := fi.values.ReadAt(buf, int64(ptr.Offset()))
-	if n == len(buf) {
-		return buf, nil
-	} else if err == nil {
-		err = errs.New("short read")
+	switch vptr := fi.ent.Value(); vptr[0] {
+	case inlinePtr_Inline:
+		fi.val = append(fi.val[:0], vptr.InlineData()...)
+	case inlinePtr_Pointer:
+		val, ok := fi.valBuffer.Read(vptr.Length())
+		if !ok {
+			fi.err = fi.valBuffer.Err()
+			return false
+		}
+		fi.val = append(fi.val[:0], val...)
 	}
-	return nil, err
+
+	return true
 }
+
+func (fi *fileIterator) Entry() entry { return fi.ent }
+
+func (fi *fileIterator) Key() []byte {
+	if fi.ent.Key().Null() {
+		return nil
+	}
+	return fi.key
+}
+
+func (fi *fileIterator) Value() []byte {
+	if fi.ent.Value().Null() {
+		return nil
+	}
+	return fi.val
+}
+
+func (fi *fileIterator) Err() error { return fi.err }
