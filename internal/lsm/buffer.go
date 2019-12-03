@@ -12,12 +12,6 @@ type buffer struct {
 	n   int
 }
 
-func newBuffer(fh file, size int) *buffer {
-	var buf buffer
-	initBuffer(&buf, fh, size)
-	return &buf
-}
-
 func initBuffer(buf *buffer, fh file, size int) {
 	buf.fh = fh
 	buf.buf = make([]byte, 0, size)

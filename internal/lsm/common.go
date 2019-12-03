@@ -19,18 +19,18 @@ type iterator interface {
 
 const bufferSize = 64 * 1024
 
-type entry [32]byte
+type entry [2 * inlinePtrSize]byte
 
 const entrySize = 32
 
 func newEntry(kptr, vptr inlinePtr) (ent entry) {
-	copy(ent[0:16], kptr[:])
-	copy(ent[16:32], vptr[:])
+	copy(ent[0:inlinePtrSize], kptr[:])
+	copy(ent[inlinePtrSize:2*inlinePtrSize], vptr[:])
 	return ent
 }
 
 func (e *entry) Key() *inlinePtr   { return (*inlinePtr)(unsafe.Pointer(&e[0])) }
-func (e *entry) Value() *inlinePtr { return (*inlinePtr)(unsafe.Pointer(&e[16])) }
+func (e *entry) Value() *inlinePtr { return (*inlinePtr)(unsafe.Pointer(&e[inlinePtrSize])) }
 
 type cleaner []func() error
 

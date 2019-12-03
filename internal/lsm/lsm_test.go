@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -42,15 +43,13 @@ func TestLSM(t *testing.T) {
 	})
 }
 
-const sorted = false
-const valueSize = 10
+const sorted = true
+const valueSize = 8
 const numKeys = 1 << 20
 
-// const largeKey = "57389576498567394"
+var largeKey = "57389576498567394"
 
-const largeKey = ""
-
-const keyLength = 10
+const keyLength = 8
 
 var keybuf []byte
 
@@ -68,7 +67,7 @@ func init() {
 }
 
 func getKey(i int) []byte {
-	return keybuf[keyLength*i : keyLength*(i+1)]
+	return keybuf[keyLength*(i%numKeys) : keyLength*((i%numKeys)+1)]
 }
 
 type inlineKeys []byte
@@ -88,9 +87,7 @@ func (ik inlineKeys) Swap(i int, j int) {
 
 func BenchmarkLSM(b *testing.B) {
 	b.Run("Basic", func(b *testing.B) {
-		inserting, writing = 0, 0
-		written, writtenDur = 0, 0
-		read, readDur = 0, 0
+		resetStats()
 
 		value := make([]byte, valueSize)
 
@@ -129,10 +126,58 @@ func BenchmarkLSM(b *testing.B) {
 		b.ReportMetric(float64(time.Since(now).Microseconds())/(float64(b.N)*numKeys), "us/key")
 
 		if trackStats {
+			b.ReportMetric(inserting.Seconds()/float64(b.N), "insertion-seconds")
+			b.ReportMetric(writing.Seconds()/float64(b.N), "writing-seconds")
+			b.ReportMetric(float64(written)/time.Duration(writtenDur).Seconds()/1024/1024/float64(b.N), "written/sec")
+			b.ReportMetric(float64(read)/time.Duration(readDur).Seconds()/1024/1024/float64(b.N), "read/sec")
+			b.ReportMetric(float64(snapshots)/float64(b.N), "snapshots")
+		}
+	})
+
+	b.Run("Parallel", func(b *testing.B) {
+		resetStats()
+
+		value := make([]byte, valueSize)
+
+		b.SetBytes((valueSize + entrySize))
+		b.ResetTimer()
+		b.ReportAllocs()
+
+		now := time.Now()
+		dir, cleanup := tempDir(b)
+		defer cleanup()
+
+		lsm, err := New(dir, Options{
+			// NoWAL:     true,
+			NoWALSync: true,
+		})
+		assert.NoError(b, err)
+		defer lsm.Close()
+
+		var keys uint64
+		var ctr uint64
+
+		b.RunParallel(func(pb *testing.PB) {
+			var lkeys uint64
+			rng := pcg.New(atomic.AddUint64(&ctr, 1))
+			for pb.Next() {
+				assert.NoError(b, lsm.SetBytes(getKey(int(rng.Uint32())), value))
+				lkeys++
+			}
+			atomic.AddUint64(&keys, lkeys)
+		})
+
+		assert.NoError(b, lsm.CompactAndSync())
+
+		b.ReportMetric(float64(keys)/time.Since(now).Seconds(), "keys/sec")
+		b.ReportMetric(float64(time.Since(now).Microseconds())/float64(keys), "us/key")
+
+		if trackStats {
 			b.ReportMetric(inserting.Seconds(), "insertion-seconds")
 			b.ReportMetric(writing.Seconds(), "writing-seconds")
 			b.ReportMetric(float64(written)/time.Duration(writtenDur).Seconds()/1024/1024, "written/sec")
 			b.ReportMetric(float64(read)/time.Duration(readDur).Seconds()/1024/1024, "read/sec")
+			b.ReportMetric(float64(snapshots)/time.Since(now).Seconds(), "snapshots/sec")
 		}
 	})
 }

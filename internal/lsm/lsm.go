@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/zeebo/errs"
 	"github.com/zeebo/mon/internal/lsm/system"
@@ -39,29 +42,13 @@ type Options struct {
 	NoWALSync bool
 }
 
-const trackStats = false
-
-var (
-	inserting time.Duration
-	writing   time.Duration
-
-	written    int64
-	writtenDur int64
-
-	read    int64
-	readDur int64
-)
-
-// type mem = btreeMem
-
-type mem = heapMem
-
 type T struct {
+	mu     sync.Mutex
 	dir    string
 	ndir   string
 	opts   Options
 	wal    *wal
-	mem    *mem
+	mem    mem
 	files  []*levelFiles
 	names  []levelNames
 	entBuf []byte
@@ -81,7 +68,7 @@ func initT(t *T, dir string, opts Options) (err error) {
 	t.dir = dir
 	t.ndir = dir + "\x00"
 	t.opts = opts
-	t.mem = (*mem).newMem(nil, opts.MemCap)
+	t.mem.init(opts.MemCap)
 	t.entBuf = make([]byte, 0, bufferSize)
 	t.valBuf = make([]byte, 0, bufferSize)
 
@@ -124,7 +111,9 @@ func initT(t *T, dir string, opts Options) (err error) {
 }
 
 func (t *T) Close() (err error) {
-	err = errs.Combine(err, t.wal.Close())
+	if t.wal != nil {
+		err = errs.Combine(err, t.wal.Close())
+	}
 	for _, files := range t.files {
 		if files != nil {
 			err = errs.Combine(err, files.entries.Close())
@@ -134,35 +123,35 @@ func (t *T) Close() (err error) {
 	return err
 }
 
+func (t *T) SetBytes(key, value []byte) (err error) {
+	return t.SetString(*(*string)(unsafe.Pointer(&key)), value)
+}
+
 func (t *T) SetString(key string, value []byte) (err error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
 	if t.wal != nil {
 		if err := t.wal.AddString(key, value); err != nil {
 			return err
 		}
 	}
-	if t.mem.SetString(key, value) {
-		return nil
-	}
-	return t.snapshotCompact()
-}
 
-func (t *T) SetBytes(key, value []byte) (err error) {
-	if t.wal != nil {
-		if err := t.wal.AddBytes(key, value); err != nil {
-			return err
-		}
-	}
 	var now time.Time
 	if trackStats {
 		now = time.Now()
 	}
-	ok := t.mem.SetBytes(key, value)
+
+	ok := t.mem.SetString(key, value)
+
 	if trackStats {
 		inserting += time.Since(now)
 	}
+
 	if ok {
 		return nil
 	}
+
 	return t.snapshotCompact()
 }
 
@@ -174,9 +163,13 @@ func (t *T) CompactAndSync() (err error) {
 }
 
 func (t *T) snapshotCompact() (err error) {
+	if trackStats {
+		atomic.AddInt64(&snapshots, 1)
+	}
+
 	level := len(t.files)
-	iter := t.mem.iter()
-	iters := []iterator{&iter}
+	iters := t.mem.iters()
+
 	for i, lf := range t.files {
 		if lf == nil {
 			level = i

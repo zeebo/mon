@@ -15,20 +15,11 @@ type heapMem struct {
 	val []byte
 }
 
-func newHeapMem(cap uint64) *heapMem {
-	var m heapMem
-	initHeapMem(&m, cap)
-	return &m
-}
-
-func (*heapMem) newMem(cap uint64) *heapMem {
-	return newHeapMem(cap)
-}
-
-func initHeapMem(m *heapMem, cap uint64) {
+func (m *heapMem) init(cap uint64) {
 	m.cap = cap
 	m.keys = make(map[string]*entry)
 	m.data = make([]byte, 0, cap)
+	m.heap = make([]entry, 0, cap/entrySize)
 }
 
 func (m *heapMem) iter() heapMem {
@@ -40,6 +31,16 @@ func (m *heapMem) iter() heapMem {
 	}
 }
 
+func (m *heapMem) iters() []iterator {
+	it := m.iter()
+	return []iterator{&it}
+}
+
+func (m *heapMem) iterGen() interface{ Next() bool } {
+	it := m.iter()
+	return &it
+}
+
 func (m *heapMem) reset() {
 	m.data = m.data[:0]
 	m.heap = m.heap[:0]
@@ -48,8 +49,9 @@ func (m *heapMem) reset() {
 	}
 }
 
-func (m *heapMem) Len() uint64 { return entrySize*uint64(len(m.keys)) + uint64(len(m.data)) }
-func (m *heapMem) Cap() uint64 { return m.cap }
+func (m *heapMem) Keys() uint32 { return uint32(len(m.keys)) }
+func (m *heapMem) Cap() uint64  { return m.cap }
+func (m *heapMem) Len() uint64  { return entrySize*uint64(len(m.keys)) + uint64(len(m.data)) }
 
 func (m *heapMem) SetBytes(key, value []byte) bool {
 	return m.SetString(*(*string)(unsafe.Pointer(&key)), value)
@@ -79,36 +81,6 @@ func (m *heapMem) SetString(key string, value []byte) bool {
 	return m.Len() < m.Cap()
 }
 
-func (m *heapMem) readInlinePtr(ptr *inlinePtr) []byte {
-	if ptr.Pointer() {
-		begin := ptr.Offset()
-		end := begin + uint64(ptr.Length())
-		if begin < end && begin < uint64(len(m.data)) && end < uint64(len(m.data)) {
-			return m.data[begin:end]
-		}
-	}
-	return nil
-}
-
-func (m *heapMem) inlinePtrLess(i, j *inlinePtr) bool {
-	if ip, jp := i.Prefix(), j.Prefix(); ip < jp {
-		return true
-	} else if ip > jp {
-		return false
-	} else {
-		ki := m.readInlinePtr(i)
-		if ki == nil {
-			ki = i.InlineData()
-		}
-		kj := m.readInlinePtr(j)
-		if kj == nil {
-			kj = j.InlineData()
-		}
-
-		return string(ki) < string(kj)
-	}
-}
-
 func (m *heapMem) heapUp(ptrs []entry) {
 	i := len(ptrs) - 1
 	if i < 0 || i >= len(ptrs) {
@@ -126,14 +98,24 @@ next:
 		if ip > jp {
 			return
 		} else if ip == jp {
-			ki := m.readInlinePtr(ptri)
-			if ki == nil {
+			var ki []byte
+			if ptri.Pointer() {
+				begin := ptri.Offset()
+				end := begin + uint64(ptri.Length())
+				ki = m.data[begin:end]
+			} else {
 				ki = ptri.InlineData()
 			}
-			kj := m.readInlinePtr(ptrj)
-			if kj == nil {
+
+			var kj []byte
+			if ptrj.Pointer() {
+				begin := ptrj.Offset()
+				end := begin + uint64(ptrj.Length())
+				kj = m.data[begin:end]
+			} else {
 				kj = ptrj.InlineData()
 			}
+
 			if string(ki) >= string(kj) {
 				return
 			}
@@ -165,14 +147,24 @@ next:
 			if jp2 < jp {
 				ptrj, j, jp = ptrj2, j2, jp2
 			} else if jp2 == jp {
-				kj := m.readInlinePtr(ptrj)
-				if kj == nil {
+				var kj []byte
+				if ptrj.Pointer() {
+					begin := ptrj.Offset()
+					end := begin + uint64(ptrj.Length())
+					kj = m.data[begin:end]
+				} else {
 					kj = ptrj.InlineData()
 				}
-				kj2 := m.readInlinePtr(ptrj2)
-				if kj2 == nil {
+
+				var kj2 []byte
+				if ptrj2.Pointer() {
+					begin := ptrj2.Offset()
+					end := begin + uint64(ptrj2.Length())
+					kj2 = m.data[begin:end]
+				} else {
 					kj2 = ptrj2.InlineData()
 				}
+
 				if string(kj2) < string(kj) {
 					ptrj, j, jp = ptrj2, j2, jp2
 				}
@@ -182,14 +174,24 @@ next:
 		if ip > jp {
 			return
 		} else if ip == jp {
-			ki := m.readInlinePtr(ptri)
-			if ki == nil {
+			var ki []byte
+			if ptri.Pointer() {
+				begin := ptri.Offset()
+				end := begin + uint64(ptri.Length())
+				ki = m.data[begin:end]
+			} else {
 				ki = ptri.InlineData()
 			}
-			kj := m.readInlinePtr(ptrj)
-			if kj == nil {
+
+			var kj []byte
+			if ptrj.Pointer() {
+				begin := ptrj.Offset()
+				end := begin + uint64(ptrj.Length())
+				kj = m.data[begin:end]
+			} else {
 				kj = ptrj.InlineData()
 			}
+
 			if string(ki) >= string(kj) {
 				return
 			}
@@ -221,8 +223,6 @@ func (m *heapMem) Next() bool {
 		begin := kptr.Offset()
 		end := begin + uint64(kptr.Length())
 		m.key = m.data[begin:end]
-	case inlinePtr_Null:
-		m.key = nil
 	}
 
 	switch vptr := m.ent.Value(); vptr[0] {
@@ -232,15 +232,25 @@ func (m *heapMem) Next() bool {
 		begin := vptr.Offset()
 		end := begin + uint64(vptr.Length())
 		m.val = m.data[begin:end]
-	case inlinePtr_Null:
-		m.val = nil
 	}
 
 	return true
 }
 
-func (m *heapMem) Entry() entry  { return m.ent }
-func (m *heapMem) Key() []byte   { return m.key }
-func (m *heapMem) Value() []byte { return m.val }
+func (m *heapMem) Entry() entry { return m.ent }
+
+func (m *heapMem) Key() []byte {
+	if m.ent.Key().Null() {
+		return nil
+	}
+	return m.key
+}
+
+func (m *heapMem) Value() []byte {
+	if m.ent.Value().Null() {
+		return nil
+	}
+	return m.val
+}
 
 func (m *heapMem) Err() error { return nil }

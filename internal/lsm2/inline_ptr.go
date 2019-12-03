@@ -1,9 +1,7 @@
-package lsm
+package lsm2
 
 import (
 	"encoding/binary"
-	"fmt"
-	"strings"
 )
 
 const (
@@ -12,9 +10,7 @@ const (
 	inlinePtr_Inline  = 2
 )
 
-type inlinePtr [inlinePtrSize]byte
-
-const inlinePtrSize = 16
+type inlinePtr [16]byte
 
 func newInlinePtrBytes(data []byte) (i inlinePtr) {
 	if data != nil {
@@ -75,13 +71,6 @@ func (i *inlinePtr) SetOffset(offset uint64) {
 	i[15] = byte(offset)
 }
 
-func (i inlinePtr) String() string {
-	out := "N"
-	if i.Inline() {
-		out = fmt.Sprintf("I:%02d:%x", i.Length(), i.InlineData())
-	} else if i.Pointer() {
-		out = fmt.Sprintf("P:%02d:%x:%d", i.Length(), i.Prefix(), i.Offset())
-	}
-	out += strings.Repeat(" ", 32-len(out))
-	return out
+type inlinePtrReader interface {
+	AppendPointer(ptr inlinePtr, buf []byte) ([]byte, error)
 }

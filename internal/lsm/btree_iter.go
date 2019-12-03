@@ -1,9 +1,5 @@
 package lsm
 
-import (
-	"github.com/zeebo/errs"
-)
-
 // btreeIterator walks over the entries in a btree.
 type btreeIterator struct {
 	b     *btree
@@ -17,14 +13,14 @@ type btreeIterator struct {
 	val []byte
 }
 
-func (i *btreeIterator) AppendPointer(ptr inlinePtr, buf []byte) ([]byte, error) {
-	begin := ptr.Offset()
-	end := begin + uint64(ptr.Length())
-	if begin <= end && begin <= uint64(len(i.buf)) && end <= uint64(len(i.buf)) {
-		return append(buf, i.buf[begin:end]...), nil
-	}
-	return nil, errs.New("invalid pointer read: %d[%d:%d]", len(i.buf), begin, end)
-}
+// func (i *btreeIterator) AppendPointer(ptr inlinePtr, buf []byte) ([]byte, error) {
+// 	begin := ptr.Offset()
+// 	end := begin + uint64(ptr.Length())
+// 	if begin <= end && begin <= uint64(len(i.buf)) && end <= uint64(len(i.buf)) {
+// 		return append(buf, i.buf[begin:end]...), nil
+// 	}
+// 	return nil, errs.New("invalid pointer read: %d[%d:%d]", len(i.buf), begin, end)
+// }
 
 func (i *btreeIterator) Next() bool {
 	if i.n == nil {
@@ -59,8 +55,6 @@ func (i *btreeIterator) cache() {
 		begin := kptr.Offset()
 		end := begin + uint64(kptr.Length())
 		i.key = i.buf[begin:end]
-	case inlinePtr_Null:
-		i.key = nil
 	}
 
 	switch vptr := i.ent.Value(); vptr[0] {
@@ -70,12 +64,23 @@ func (i *btreeIterator) cache() {
 		begin := vptr.Offset()
 		end := begin + uint64(vptr.Length())
 		i.val = i.buf[begin:end]
-	case inlinePtr_Null:
-		i.val = nil
 	}
 }
 
-func (i *btreeIterator) Entry() entry  { return i.ent }
-func (i *btreeIterator) Key() []byte   { return i.key }
-func (i *btreeIterator) Value() []byte { return i.val }
-func (i *btreeIterator) Err() error    { return nil }
+func (i *btreeIterator) Entry() entry { return i.ent }
+
+func (i *btreeIterator) Key() []byte {
+	if i.ent.Key().Null() {
+		return nil
+	}
+	return i.key
+}
+
+func (i *btreeIterator) Value() []byte {
+	if i.ent.Value().Null() {
+		return nil
+	}
+	return i.val
+}
+
+func (i *btreeIterator) Err() error { return nil }
