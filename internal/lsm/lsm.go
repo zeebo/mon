@@ -5,27 +5,24 @@ import (
 	"io"
 	"path/filepath"
 	"sync"
-	"sync/atomic"
-	"time"
 	"unsafe"
 
 	"github.com/zeebo/errs"
-	"github.com/zeebo/mon/internal/lsm/system"
+	"github.com/zeebo/mon/internal/lsm/buffer"
+	"github.com/zeebo/mon/internal/lsm/file"
+	"github.com/zeebo/mon/internal/lsm/file/filewriter"
+	"github.com/zeebo/mon/internal/lsm/file/writehandle"
+	"github.com/zeebo/mon/internal/lsm/iterator/fileiter"
+	"github.com/zeebo/mon/internal/lsm/iterator/mergeiter"
+	"github.com/zeebo/mon/internal/lsm/mem"
+	"github.com/zeebo/mon/internal/lsm/wal"
+	"github.com/zeebo/mon/internal/lsm/wal/waliter"
 	"golang.org/x/sys/unix"
 )
 
-// type file = *os.File
-
-type file = system.File
-
-func fileCreate(path string) (file, error) { return system.Create(path) }
-func fileOpen(path string) (file, error)   { return system.Open(path) }
-func fileRename(old, new string) error     { return system.Rename(old, new) }
-func fileRemove(path string) error         { return system.Remove(path) }
-
 type levelFiles struct {
-	entries file
-	values  file
+	entries file.T
+	values  file.T
 	names   levelNames
 }
 
@@ -47,8 +44,8 @@ type T struct {
 	dir    string
 	ndir   string
 	opts   Options
-	wal    *wal
-	mem    mem
+	wal    *wal.T
+	mem    mem.T
 	files  []*levelFiles
 	names  []levelNames
 	entBuf []byte
@@ -68,11 +65,11 @@ func initT(t *T, dir string, opts Options) (err error) {
 	t.dir = dir
 	t.ndir = dir + "\x00"
 	t.opts = opts
-	t.mem.init(opts.MemCap)
-	t.entBuf = make([]byte, 0, bufferSize)
-	t.valBuf = make([]byte, 0, bufferSize)
+	t.mem.Init(opts.MemCap)
+	t.entBuf = make([]byte, 0, buffer.Size)
+	t.valBuf = make([]byte, 0, buffer.Size)
 
-	walFh, err := fileCreate(filepath.Join(dir, "wal\x00"))
+	walFh, err := file.Create(filepath.Join(dir, "wal\x00"))
 	if err != nil {
 		return errs.Wrap(err)
 	}
@@ -82,7 +79,7 @@ func initT(t *T, dir string, opts Options) (err error) {
 		}
 	}()
 
-	iter := newWALIterator(walFh)
+	iter := waliter.New(walFh)
 	for {
 		_, key, value, ok := iter.Next()
 		if !ok {
@@ -102,7 +99,7 @@ func initT(t *T, dir string, opts Options) (err error) {
 	}
 
 	if !t.opts.NoWAL {
-		t.wal = newWAL(walFh, !t.opts.NoWALSync)
+		t.wal = wal.New(walFh, !t.opts.NoWALSync)
 	}
 
 	// TODO: load up entries and values
@@ -137,17 +134,7 @@ func (t *T) SetString(key string, value []byte) (err error) {
 		}
 	}
 
-	var now time.Time
-	if trackStats {
-		now = time.Now()
-	}
-
 	ok := t.mem.SetString(key, value)
-
-	if trackStats {
-		inserting += time.Since(now)
-	}
-
 	if ok {
 		return nil
 	}
@@ -163,12 +150,8 @@ func (t *T) CompactAndSync() (err error) {
 }
 
 func (t *T) snapshotCompact() (err error) {
-	if trackStats {
-		atomic.AddInt64(&snapshots, 1)
-	}
-
 	level := len(t.files)
-	iters := t.mem.iters()
+	iters := t.mem.Iters()
 
 	for i, lf := range t.files {
 		if lf == nil {
@@ -187,7 +170,7 @@ func (t *T) snapshotCompact() (err error) {
 		if err := unix.Fadvise(int(lf.values.Fd()), 0, 0, unix.FADV_SEQUENTIAL); err != nil {
 			return errs.Wrap(err)
 		}
-		iters = append(iters, newFileIterator(lf.entries, lf.values))
+		iters = append(iters, fileiter.New(lf.entries, lf.values))
 	}
 
 	for len(t.names) <= level {
@@ -200,45 +183,45 @@ func (t *T) snapshotCompact() (err error) {
 	}
 
 	names := t.names[level]
-	mg := newMerger(iters)
+	mg := mergeiter.New(iters)
 
-	entriesFh, err := fileCreate(names.entriesNameTmp)
+	entriesFh, err := file.Create(names.entriesNameTmp)
 	if err != nil {
 		return errs.Wrap(err)
 	}
 	defer func() {
 		if err != nil {
 			err = errs.Combine(err, entriesFh.Close())
-			err = errs.Combine(err, fileRemove(names.entriesNameTmp))
+			err = errs.Combine(err, file.Remove(names.entriesNameTmp))
 		}
 	}()
 
-	valuesFh, err := fileCreate(names.valuesNameTmp)
+	valuesFh, err := file.Create(names.valuesNameTmp)
 	if err != nil {
 		return errs.Wrap(err)
 	}
 	defer func() {
 		if err != nil {
 			err = errs.Combine(err, valuesFh.Close())
-			err = errs.Combine(err, fileRemove(names.valuesNameTmp))
+			err = errs.Combine(err, file.Remove(names.valuesNameTmp))
 		}
 	}()
 
-	entries := newWriteHandleBuf(entriesFh, t.entBuf)
-	values := newWriteHandleBuf(valuesFh, t.valBuf)
+	entries := writehandle.NewBuf(entriesFh, t.entBuf)
+	values := writehandle.NewBuf(valuesFh, t.valBuf)
 
-	if err := writeFile(mg, entries, values); err != nil {
+	if err := filewriter.Write(mg, entries, values); err != nil {
 		return errs.Wrap(err)
 	}
 
-	if err := fileRename(names.valuesNameTmp, names.valuesName); err != nil {
+	if err := file.Rename(names.valuesNameTmp, names.valuesName); err != nil {
 		return errs.Wrap(err)
 	}
 	if err := t.syncDir(); err != nil {
 		return errs.Wrap(err)
 	}
 
-	if err := fileRename(names.entriesNameTmp, names.entriesName); err != nil {
+	if err := file.Rename(names.entriesNameTmp, names.entriesName); err != nil {
 		return errs.Wrap(err)
 	}
 	if err := t.syncDir(); err != nil {
@@ -265,13 +248,13 @@ func (t *T) snapshotCompact() (err error) {
 		if err := lf.entries.Close(); err != nil {
 			return errs.Wrap(err)
 		}
-		if err := fileRemove(lf.names.entriesName); err != nil {
+		if err := file.Remove(lf.names.entriesName); err != nil {
 			return errs.Wrap(err)
 		}
 		if err := lf.values.Close(); err != nil {
 			return errs.Wrap(err)
 		}
-		if err := fileRemove(lf.names.valuesName); err != nil {
+		if err := file.Remove(lf.names.valuesName); err != nil {
 			return errs.Wrap(err)
 		}
 
@@ -288,12 +271,12 @@ func (t *T) snapshotCompact() (err error) {
 		return errs.Wrap(err)
 	}
 
-	t.mem.reset()
+	t.mem.Reset()
 	return nil
 }
 
 func (t *T) syncDir() error {
-	dir, err := fileOpen(t.ndir)
+	dir, err := file.Open(t.ndir)
 	if err != nil {
 		return errs.Wrap(err)
 	}

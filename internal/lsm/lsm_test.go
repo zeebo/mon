@@ -1,23 +1,25 @@
 package lsm
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/boltdb/bolt"
 	"github.com/zeebo/assert"
+	"github.com/zeebo/mon/internal/lsm/entry"
+	"github.com/zeebo/mon/internal/lsm/testutil"
 	"github.com/zeebo/pcg"
 )
 
+const valueSize = 8
+
 func TestLSM(t *testing.T) {
 	t.Run("Basic", func(t *testing.T) {
-		dir, cleanup := tempDir(t)
+		dir, cleanup := testutil.TempDir(t)
 		defer cleanup()
 
 		defer func() {
@@ -43,62 +45,18 @@ func TestLSM(t *testing.T) {
 	})
 }
 
-const sorted = true
-const valueSize = 8
-const numKeys = 1 << 20
-
-var largeKey = "57389576498567394"
-
-const keyLength = 8
-
-var keybuf []byte
-
-func init() {
-	var rng pcg.T
-	for i := 0; i < numKeys; i++ {
-		var key [keyLength]byte
-		copy(key[:], []byte(fmt.Sprintf("%d%s", rng.Uint32(), largeKey)))
-		_ = key[keyLength-1]
-		keybuf = append(keybuf, key[:]...)
-	}
-	if sorted {
-		sort.Sort(inlineKeys(keybuf))
-	}
-}
-
-func getKey(i int) []byte {
-	return keybuf[keyLength*(i%numKeys) : keyLength*((i%numKeys)+1)]
-}
-
-type inlineKeys []byte
-
-func (ik inlineKeys) Len() int { return numKeys }
-
-func (ik inlineKeys) Less(i int, j int) bool {
-	return bytes.Compare(getKey(i), getKey(j)) < 0
-}
-
-func (ik inlineKeys) Swap(i int, j int) {
-	var tmp [keyLength]byte
-	copy(tmp[:], getKey(i))
-	copy(getKey(i), getKey(j))
-	copy(getKey(j), tmp[:])
-}
-
 func BenchmarkLSM(b *testing.B) {
 	b.Run("Basic", func(b *testing.B) {
-		resetStats()
-
 		value := make([]byte, valueSize)
 
-		b.SetBytes((valueSize + entrySize) * numKeys)
+		b.SetBytes((valueSize + entry.Size) * testutil.NumKeys)
 		b.ResetTimer()
 		b.ReportAllocs()
 
 		now := time.Now()
 		for i := 0; i < b.N; i++ {
 			func() {
-				dir, cleanup := tempDir(b)
+				dir, cleanup := testutil.TempDir(b)
 				defer cleanup()
 
 				// defer func() {
@@ -115,36 +73,26 @@ func BenchmarkLSM(b *testing.B) {
 				assert.NoError(b, err)
 				defer lsm.Close()
 
-				for i := 0; i < numKeys; i++ {
-					assert.NoError(b, lsm.SetBytes(getKey(i), value))
+				for i := 0; i < testutil.NumKeys; i++ {
+					assert.NoError(b, lsm.SetBytes(testutil.GetKey(i), value))
 				}
 				assert.NoError(b, lsm.CompactAndSync())
 			}()
 		}
 
-		b.ReportMetric(float64(b.N)*numKeys/time.Since(now).Seconds(), "keys/sec")
-		b.ReportMetric(float64(time.Since(now).Microseconds())/(float64(b.N)*numKeys), "us/key")
-
-		if trackStats {
-			b.ReportMetric(inserting.Seconds()/float64(b.N), "insertion-seconds")
-			b.ReportMetric(writing.Seconds()/float64(b.N), "writing-seconds")
-			b.ReportMetric(float64(written)/time.Duration(writtenDur).Seconds()/1024/1024/float64(b.N), "written/sec")
-			b.ReportMetric(float64(read)/time.Duration(readDur).Seconds()/1024/1024/float64(b.N), "read/sec")
-			b.ReportMetric(float64(snapshots)/float64(b.N), "snapshots")
-		}
+		b.ReportMetric(float64(b.N)*testutil.NumKeys/time.Since(now).Seconds(), "keys/sec")
+		b.ReportMetric(float64(time.Since(now).Microseconds())/(float64(b.N)*testutil.NumKeys), "us/key")
 	})
 
 	b.Run("Parallel", func(b *testing.B) {
-		resetStats()
-
 		value := make([]byte, valueSize)
 
-		b.SetBytes((valueSize + entrySize))
+		b.SetBytes((valueSize + entry.Size))
 		b.ResetTimer()
 		b.ReportAllocs()
 
 		now := time.Now()
-		dir, cleanup := tempDir(b)
+		dir, cleanup := testutil.TempDir(b)
 		defer cleanup()
 
 		lsm, err := New(dir, Options{
@@ -161,7 +109,7 @@ func BenchmarkLSM(b *testing.B) {
 			var lkeys uint64
 			rng := pcg.New(atomic.AddUint64(&ctr, 1))
 			for pb.Next() {
-				assert.NoError(b, lsm.SetBytes(getKey(int(rng.Uint32())), value))
+				assert.NoError(b, lsm.SetBytes(testutil.GetKey(int(rng.Uint32())), value))
 				lkeys++
 			}
 			atomic.AddUint64(&keys, lkeys)
@@ -171,14 +119,6 @@ func BenchmarkLSM(b *testing.B) {
 
 		b.ReportMetric(float64(keys)/time.Since(now).Seconds(), "keys/sec")
 		b.ReportMetric(float64(time.Since(now).Microseconds())/float64(keys), "us/key")
-
-		if trackStats {
-			b.ReportMetric(inserting.Seconds(), "insertion-seconds")
-			b.ReportMetric(writing.Seconds(), "writing-seconds")
-			b.ReportMetric(float64(written)/time.Duration(writtenDur).Seconds()/1024/1024, "written/sec")
-			b.ReportMetric(float64(read)/time.Duration(readDur).Seconds()/1024/1024, "read/sec")
-			b.ReportMetric(float64(snapshots)/time.Since(now).Seconds(), "snapshots/sec")
-		}
 	})
 }
 
@@ -186,14 +126,14 @@ func BenchmarkBolt(b *testing.B) {
 	b.Run("Basic", func(b *testing.B) {
 		value := make([]byte, valueSize)
 
-		b.SetBytes((valueSize + entrySize) * numKeys)
+		b.SetBytes((valueSize + entry.Size) * testutil.NumKeys)
 		b.ResetTimer()
 		b.ReportAllocs()
 
 		now := time.Now()
 		for i := 0; i < b.N; i++ {
 			func() {
-				dir, cleanup := tempDir(b)
+				dir, cleanup := testutil.TempDir(b)
 				defer cleanup()
 
 				db, err := bolt.Open(filepath.Join(dir, "foo"), 0644, nil)
@@ -208,11 +148,11 @@ func BenchmarkBolt(b *testing.B) {
 					return err
 				}))
 
-				for i := 0; i < numKeys; i += 1024 {
+				for i := 0; i < testutil.NumKeys; i += 1024 {
 					assert.NoError(b, db.Update(func(tx *bolt.Tx) error {
 						bkt := tx.Bucket(bucket)
 						for j := 0; j < 1024; j++ {
-							if err := bkt.Put(getKey(i+j), value); err != nil {
+							if err := bkt.Put(testutil.GetKey(i+j), value); err != nil {
 								return err
 							}
 						}
@@ -222,7 +162,7 @@ func BenchmarkBolt(b *testing.B) {
 			}()
 		}
 
-		b.ReportMetric(float64(b.N)*numKeys/time.Since(now).Seconds(), "keys/sec")
-		b.ReportMetric(float64(time.Since(now).Microseconds())/(float64(b.N)*numKeys), "us/key")
+		b.ReportMetric(float64(b.N)*testutil.NumKeys/time.Since(now).Seconds(), "keys/sec")
+		b.ReportMetric(float64(time.Since(now).Microseconds())/(float64(b.N)*testutil.NumKeys), "us/key")
 	})
 }
