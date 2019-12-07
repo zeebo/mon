@@ -7,6 +7,8 @@ import (
 	"github.com/zeebo/mon/internal/lsm/testutil"
 )
 
+var value = make([]byte, testutil.ValueLength)
+
 type T interface {
 	SetBytes([]byte, []byte) bool
 	Init(cap uint64)
@@ -22,7 +24,7 @@ func Benchmark(b *testing.B, mm func(cap uint64) T) {
 		b.ResetTimer()
 
 		for i := 0; i < b.N; i++ {
-			if !m.SetBytes(testutil.GetKey(i), nil) {
+			if !m.SetBytes(testutil.GetKey(i), value) {
 				m.Reset()
 			}
 		}
@@ -36,7 +38,7 @@ func Benchmark(b *testing.B, mm func(cap uint64) T) {
 
 		for i := 0; i < b.N; i++ {
 			for j := 0; ; j++ {
-				if !m.SetBytes(testutil.GetKey(j), nil) {
+				if !m.SetBytes(testutil.GetKey(j), value) {
 					break
 				}
 			}
@@ -52,9 +54,12 @@ func Benchmark(b *testing.B, mm func(cap uint64) T) {
 
 		for i := 0; i < b.N; i++ {
 			for j := 0; ; j++ {
-				if !m.SetBytes(testutil.GetKey(j), nil) {
+				if !m.SetBytes(testutil.GetKey(j), value) {
 					it := m.Iters()[0]
 					for it.Next() {
+					}
+					if i == 0 {
+						b.Log(j)
 					}
 					break
 				}

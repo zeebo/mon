@@ -11,10 +11,10 @@ import (
 
 const (
 	KeyLength   = 8
-	ValueLength = 400
+	ValueLength = 8
 	NumKeys     = 1 << 20
 
-	sorted   = true
+	sorted   = false
 	largeKey = "57389576498567394"
 )
 

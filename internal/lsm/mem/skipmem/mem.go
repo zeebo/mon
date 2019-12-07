@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	skipMemLevels = 4
-	skipMemRatio  = 4
+	skipMemLevels = 10
+	skipMemRatio  = 2
 	skipMemSize   = 1 << (skipMemLevels * skipMemRatio)
 )
 
@@ -174,7 +174,7 @@ func (m *T) set(kptr inlineptr.T, key string, val uint32) bool {
 
 	ptr = &ptrs[id]
 	ptr.prefix = prefix
-	for i := 0; i < level; i++ {
+	for i := 0; i <= level; i++ {
 		pptr := prevs[i]
 		for {
 			next := atomic.LoadUint32(&pptr.ptrs[i])

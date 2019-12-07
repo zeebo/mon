@@ -22,7 +22,7 @@ func TestSkipMem(t *testing.T) {
 		// 			i,
 		// 			s.ents[i].kptr,
 		// 			s.ents[i].val,
-		// 			s.ptrs[i].ptrs[:s.max])
+		// 			s.ptrs[i].ptrs)
 		// 	}
 		// }
 
@@ -33,17 +33,22 @@ func TestSkipMem(t *testing.T) {
 				s.SetString(fmt.Sprint(rng.Uint32n(100)), []byte(fmt.Sprint(i)))
 			}
 			s.SetString("4", []byte("99"))
+
 			// dump()
+			// fmt.Println(Buckets)
 
 			it := s.Iter()
 			last := ""
+			total := 0
 			for it.Next() {
 				// ent := it.Entry()
 				// fmt.Println(ent.Key(), ent.Value(), string(it.Key()), string(it.Value()))
 				assert.That(t, last < string(it.Key()))
 				last = string(it.Key())
+				total++
 			}
 			assert.NoError(t, it.Err())
+			assert.Equal(t, total, 100)
 		}
 	})
 }
