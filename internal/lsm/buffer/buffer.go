@@ -4,7 +4,7 @@ import (
 	"github.com/zeebo/mon/internal/lsm/file"
 )
 
-const Size = 64 * 1024
+const Size = 256 * 1024
 
 type T struct {
 	err error

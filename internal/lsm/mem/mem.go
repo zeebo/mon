@@ -1,6 +1,6 @@
 package mem
 
-import "github.com/zeebo/mon/internal/lsm/mem/heapmem"
+import "github.com/zeebo/mon/internal/lsm/mem/skipmem"
 
 // S3: A Scalable In-memory Skip-List Index for Key-Value Store
 // http://www.vldb.org/pvldb/vol12/p2183-zhang.pdf
@@ -20,6 +20,6 @@ import "github.com/zeebo/mon/internal/lsm/mem/heapmem"
 // https://pdos.csail.mit.edu/papers/masstree:eurosys12.pdf
 
 type (
-	T        = heapmem.T
-	Iterator = heapmem.Iterator
+	T        = skipmem.T
+	Iterator = skipmem.Iterator
 )

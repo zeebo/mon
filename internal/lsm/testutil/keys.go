@@ -10,23 +10,22 @@ import (
 )
 
 const (
-	NumKeys = 1 << 20
+	KeyLength   = 8
+	ValueLength = 400
+	NumKeys     = 1 << 20
 
-	sorted    = false
-	largeKey  = "57389576498567394"
-	keyLength = 8
+	sorted   = true
+	largeKey = "57389576498567394"
 )
 
 var keybuf []byte
-
 var keyOnce sync.Once
 
 func initKeys() {
 	var rng pcg.T
 	for i := 0; i < NumKeys; i++ {
-		var key [keyLength]byte
+		var key [KeyLength]byte
 		copy(key[:], []byte(fmt.Sprintf("%d%s", rng.Uint32(), largeKey)))
-		_ = key[keyLength-1]
 		keybuf = append(keybuf, key[:]...)
 	}
 	if sorted {
@@ -36,7 +35,11 @@ func initKeys() {
 
 func GetKey(i int) []byte {
 	keyOnce.Do(initKeys)
-	return keybuf[keyLength*(i%NumKeys) : keyLength*((i%NumKeys)+1)]
+	return getKey(i)
+}
+
+func getKey(i int) []byte {
+	return keybuf[KeyLength*(i%NumKeys) : KeyLength*((i%NumKeys)+1)]
 }
 
 type inlineKeys []byte
@@ -44,12 +47,12 @@ type inlineKeys []byte
 func (ik inlineKeys) Len() int { return NumKeys }
 
 func (ik inlineKeys) Less(i int, j int) bool {
-	return bytes.Compare(GetKey(i), GetKey(j)) < 0
+	return bytes.Compare(getKey(i), getKey(j)) < 0
 }
 
 func (ik inlineKeys) Swap(i int, j int) {
-	var tmp [keyLength]byte
-	copy(tmp[:], GetKey(i))
-	copy(GetKey(i), GetKey(j))
-	copy(GetKey(j), tmp[:])
+	var tmp [KeyLength]byte
+	copy(tmp[:], getKey(i))
+	copy(getKey(i), getKey(j))
+	copy(getKey(j), tmp[:])
 }

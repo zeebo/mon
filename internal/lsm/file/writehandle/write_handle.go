@@ -2,6 +2,7 @@ package writehandle
 
 import (
 	"github.com/zeebo/mon/internal/lsm/file"
+	"golang.org/x/sys/unix"
 )
 
 type T struct {
@@ -9,6 +10,9 @@ type T struct {
 	off int64
 	cap int
 	buf []byte
+
+	syncStart int64
+	syncWait  int64
 }
 
 func New(fh file.T, cap int) *T {
@@ -49,6 +53,21 @@ func (h *T) Append(p []byte) (err error) {
 		if err != nil {
 			return err
 		}
+
+		// issue a rolling sync (http://lkml.iu.edu/hypermail/linux/kernel/1005.2/01845.html)
+		// this allows the kernel to evict from the page cache more easily.
+		if err := unix.SyncFileRange(h.fh.Fd(), h.syncStart, int64(size), unix.SYNC_FILE_RANGE_WRITE); err != nil {
+			return err
+		}
+		if h.syncStart > 0 {
+			err := unix.SyncFileRange(h.fh.Fd(), h.syncWait, h.syncStart-h.syncWait,
+				unix.SYNC_FILE_RANGE_WAIT_BEFORE|unix.SYNC_FILE_RANGE_WRITE|unix.SYNC_FILE_RANGE_WAIT_AFTER)
+			if err != nil {
+				return err
+			}
+		}
+		h.syncWait = h.syncStart
+		h.syncStart += int64(size)
 
 		h.buf = h.buf[:copy(h.buf, h.buf[size:]):cap(h.buf)]
 	}

@@ -11,11 +11,10 @@ import (
 	"github.com/boltdb/bolt"
 	"github.com/zeebo/assert"
 	"github.com/zeebo/mon/internal/lsm/entry"
+	"github.com/zeebo/mon/internal/lsm/mem/skipmem"
 	"github.com/zeebo/mon/internal/lsm/testutil"
 	"github.com/zeebo/pcg"
 )
-
-const valueSize = 8
 
 func TestLSM(t *testing.T) {
 	t.Run("Basic", func(t *testing.T) {
@@ -30,7 +29,7 @@ func TestLSM(t *testing.T) {
 			}
 		}()
 
-		value := make([]byte, valueSize)
+		value := make([]byte, testutil.ValueLength)
 		lsm, err := New(dir, Options{
 			MemCap:    4096,
 			NoWALSync: true,
@@ -39,7 +38,7 @@ func TestLSM(t *testing.T) {
 		defer lsm.Close()
 
 		for i := 0; i < 10000; i++ {
-			assert.NoError(t, lsm.SetString(fmt.Sprint(pcg.Uint32()), value))
+			assert.NoError(t, lsm.SetBytes(testutil.GetKey(i), value))
 		}
 		assert.NoError(t, lsm.CompactAndSync())
 	})
@@ -47,9 +46,9 @@ func TestLSM(t *testing.T) {
 
 func BenchmarkLSM(b *testing.B) {
 	b.Run("Basic", func(b *testing.B) {
-		value := make([]byte, valueSize)
+		value := make([]byte, testutil.ValueLength)
 
-		b.SetBytes((valueSize + entry.Size) * testutil.NumKeys)
+		b.SetBytes((testutil.ValueLength + entry.Size) * testutil.NumKeys)
 		b.ResetTimer()
 		b.ReportAllocs()
 
@@ -82,12 +81,14 @@ func BenchmarkLSM(b *testing.B) {
 
 		b.ReportMetric(float64(b.N)*testutil.NumKeys/time.Since(now).Seconds(), "keys/sec")
 		b.ReportMetric(float64(time.Since(now).Microseconds())/(float64(b.N)*testutil.NumKeys), "us/key")
+
+		fmt.Println(skipmem.Buckets)
 	})
 
 	b.Run("Parallel", func(b *testing.B) {
-		value := make([]byte, valueSize)
+		value := make([]byte, testutil.ValueLength)
 
-		b.SetBytes((valueSize + entry.Size))
+		b.SetBytes((testutil.ValueLength + entry.Size))
 		b.ResetTimer()
 		b.ReportAllocs()
 
@@ -124,9 +125,9 @@ func BenchmarkLSM(b *testing.B) {
 
 func BenchmarkBolt(b *testing.B) {
 	b.Run("Basic", func(b *testing.B) {
-		value := make([]byte, valueSize)
+		value := make([]byte, testutil.ValueLength)
 
-		b.SetBytes((valueSize + entry.Size) * testutil.NumKeys)
+		b.SetBytes((testutil.ValueLength + entry.Size) * testutil.NumKeys)
 		b.ResetTimer()
 		b.ReportAllocs()
 

@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	skipMemLevels = 5
+	skipMemLevels = 4
 	skipMemRatio  = 4
 	skipMemSize   = 1 << (skipMemLevels * skipMemRatio)
 )
@@ -169,10 +169,8 @@ func (m *T) set(kptr inlineptr.T, key string, val uint32) bool {
 	ent.kptr = kptr
 	ent.val = val
 
-	level := bits.TrailingZeros32(m.rng.Uint32())/skipMemRatio + 1
-	if level > skipMemLevels {
-		level = skipMemLevels
-	}
+	level := bits.TrailingZeros32(m.rng.Uint32()|(skipMemSize/2)) / skipMemRatio
+	atomic.AddUint64(&Buckets[level], 1)
 
 	ptr = &ptrs[id]
 	ptr.prefix = prefix
@@ -190,7 +188,7 @@ func (m *T) set(kptr inlineptr.T, key string, val uint32) bool {
 		}
 	}
 
-	m.len++
-
 	return true
 }
+
+var Buckets [skipMemLevels]uint64
