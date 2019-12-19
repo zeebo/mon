@@ -6,28 +6,23 @@ import (
 	"github.com/zeebo/assert"
 )
 
-func TestChunkList(t *testing.T) {
-	cl := new(chunkList)
-	cur := cl.cursor()
+func TestChunk(t *testing.T) {
+	var root chunk
+	cur := root.cursor()
 
 	for i := 0; i < 50; i++ {
-		cur = cur.insert(skipMemEntry{val: uint32(i)})
+		cur.insert(chunkEntry{0, uint32(i)})
+		cur.right()
 	}
 
-	cur = cl.cursor()
-	for i := 0; i < 51; i++ {
-		val, ok := cur.get()
-		assert.That(t, ok != (i == 50))
-		if ok {
-			assert.Equal(t, val.val, uint32(i))
-		}
+	cur = root.cursor()
+	for i := 0; i < 50; i++ {
+		val := cur.get()
+		assert.Equal(t, val, chunkEntry{0, uint32(i)})
 
-		ncur, ok := cur.next()
-		assert.That(t, ok != (i == 50))
-		if ok {
-			cur = ncur
-		}
+		ok := cur.right()
+		assert.That(t, ok != (i == 49))
 	}
 
-	cur.insert(skipMemEntry{val: 99})
+	cur.insert(chunkEntry{0, 99})
 }

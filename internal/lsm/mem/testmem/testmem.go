@@ -7,6 +7,8 @@ import (
 	"github.com/zeebo/mon/internal/lsm/testutil"
 )
 
+const MemCap = 16 << 20
+
 var value = make([]byte, testutil.ValueLength)
 
 type T interface {
@@ -14,11 +16,14 @@ type T interface {
 	Init(cap uint64)
 	Reset()
 	Iters() []iterator.T
+
+	Len() uint64
+	Cap() uint64
 }
 
 func Benchmark(b *testing.B, mm func(cap uint64) T) {
 	b.Run("Insert", func(b *testing.B) {
-		m := mm(16 << 20)
+		m := mm(MemCap)
 
 		b.ReportAllocs()
 		b.ResetTimer()
@@ -31,7 +36,7 @@ func Benchmark(b *testing.B, mm func(cap uint64) T) {
 	})
 
 	b.Run("Insert All", func(b *testing.B) {
-		m := mm(16 << 20)
+		m := mm(MemCap)
 
 		b.ReportAllocs()
 		b.ResetTimer()
@@ -47,7 +52,7 @@ func Benchmark(b *testing.B, mm func(cap uint64) T) {
 	})
 
 	b.Run("Insert Iter", func(b *testing.B) {
-		m := mm(16 << 20)
+		m := mm(MemCap)
 
 		b.ReportAllocs()
 		b.ResetTimer()

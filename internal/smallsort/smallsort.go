@@ -1,98 +1,133 @@
 package smallsort
 
-func Sort(in [8]uint64) (out [8]uint8) {
-	var i1, i2, i3, i4, i5, i6, i7 uint64
+func Min(in *[8]uint64) (out uint8) {
+	val := in[0]
+	idx := uint64(0)
 
-	d10 := (in[1] - in[0]) >> 63
-	i1 -= d10
-	d21 := (in[2] - in[1]) >> 63
-	i1 += d21
-	i2 -= d21
-	d31 := (in[3] - in[1]) >> 63
-	i3 -= d31
-	i1 += d31
-	d41 := (in[4] - in[1]) >> 63
-	i4 -= d41
-	i1 += d41
-	d51 := (in[5] - in[1]) >> 63
-	i5 -= d51
-	i1 += d51
-	d61 := (in[6] - in[1]) >> 63
-	i6 -= d61
-	i1 += d61
-	d71 := (in[7] - in[1]) >> 63
-	i7 -= d71
-	i1 += d71
-	out[(i1+1)%8] = 1
+	if in[1] < val {
+		idx, val = 1, in[1]
+	}
+	if in[2] < val {
+		idx, val = 2, in[2]
+	}
+	if in[3] < val {
+		idx, val = 3, in[3]
+	}
+	if in[4] < val {
+		idx, val = 4, in[4]
+	}
+	if in[5] < val {
+		idx, val = 5, in[5]
+	}
+	if in[6] < val {
+		idx, val = 6, in[6]
+	}
+	if in[7] < val {
+		idx = 7
+	}
 
-	d20 := (in[2] - in[0]) >> 63
-	i2 -= d20
-	d32 := (in[3] - in[2]) >> 63
-	i3 -= d32
-	i2 += d32
-	d42 := (in[4] - in[2]) >> 63
-	i4 -= d42
-	i2 += d42
-	d52 := (in[5] - in[2]) >> 63
-	i5 -= d52
-	i2 += d52
-	d62 := (in[6] - in[2]) >> 63
-	i6 -= d62
-	i2 += d62
-	d72 := (in[7] - in[2]) >> 63
-	i7 -= d72
-	i2 += d72
-	out[(i2+2)%8] = 2
+	return byte(idx)
+}
 
-	d30 := (in[3] - in[0]) >> 63
-	i3 -= d30
-	d43 := (in[4] - in[3]) >> 63
-	i4 -= d43
-	i3 += d43
-	d53 := (in[5] - in[3]) >> 63
-	i5 -= d53
-	i3 += d53
-	d63 := (in[6] - in[3]) >> 63
-	i6 -= d63
-	i3 += d63
-	d73 := (in[7] - in[3]) >> 63
-	i7 -= d73
-	i3 += d73
-	out[(i3+3)%8] = 3
+func Sort(in *[8]uint64) (out [8]uint8) {
+	var sa, sb, sc, sd uint32
 
-	d40 := (in[4] - in[0]) >> 63
-	i4 -= d40
-	d54 := (in[5] - in[4]) >> 63
-	i5 -= d54
-	i4 += d54
-	d64 := (in[6] - in[4]) >> 63
-	i6 -= d64
-	i4 += d64
-	d74 := (in[7] - in[4]) >> 63
-	i7 -= d74
-	i4 += d74
-	out[(i4+4)%8] = 4
+	if in[1] < in[0] {
+		sa += 1 << 0
+	}
+	if in[2] < in[1] {
+		sb += 1<<3 - 1<<0
+	}
+	if in[3] < in[1] {
+		sc += 1<<6 - 1<<0
+	}
+	if in[4] < in[1] {
+		sd += 1<<9 - 1<<0
+	}
+	if in[5] < in[1] {
+		sa += 1<<12 - 1<<0
+	}
+	if in[6] < in[1] {
+		sb += 1<<15 - 1<<0
+	}
+	if in[7] < in[1] {
+		sc += 1<<18 - 1<<0
+	}
+	if in[2] < in[0] {
+		sd += 1 << 3
+	}
+	if in[3] < in[2] {
+		sa += 1<<6 - 1<<3
+	}
+	if in[4] < in[2] {
+		sb += 1<<9 - 1<<3
+	}
+	if in[5] < in[2] {
+		sc += 1<<12 - 1<<3
+	}
+	if in[6] < in[2] {
+		sd += 1<<15 - 1<<3
+	}
+	if in[7] < in[2] {
+		sa += 1<<18 - 1<<3
+	}
+	if in[3] < in[0] {
+		sb += 1 << 6
+	}
+	if in[4] < in[3] {
+		sc += 1<<9 - 1<<6
+	}
+	if in[5] < in[3] {
+		sd += 1<<12 - 1<<6
+	}
+	if in[6] < in[3] {
+		sa += 1<<15 - 1<<6
+	}
+	if in[7] < in[3] {
+		sb += 1<<18 - 1<<6
+	}
+	if in[4] < in[0] {
+		sc += 1 << 9
+	}
+	if in[5] < in[4] {
+		sd += 1<<12 - 1<<9
+	}
+	if in[6] < in[4] {
+		sa += 1<<15 - 1<<9
+	}
+	if in[7] < in[4] {
+		sb += 1<<18 - 1<<9
+	}
+	if in[5] < in[0] {
+		sc += 1 << 12
+	}
+	if in[6] < in[5] {
+		sd += 1<<15 - 1<<12
+	}
+	if in[7] < in[5] {
+		sa += 1<<18 - 1<<12
+	}
+	if in[6] < in[0] {
+		sb += 1 << 15
+	}
+	if in[7] < in[6] {
+		sc += 1<<18 - 1<<15
+	}
+	if in[7] < in[0] {
+		sd += 1 << 18
+	}
 
-	d50 := (in[5] - in[0]) >> 63
-	i5 -= d50
-	d65 := (in[6] - in[5]) >> 63
-	i6 -= d65
-	i5 += d65
-	d75 := (in[7] - in[5]) >> 63
-	i7 -= d75
-	i5 += d75
-	out[(i5+5)%8] = 5
+	s := 0b111110101100011010001 - (sa + sb + sc + sd)
 
-	d60 := (in[6] - in[0]) >> 63
-	i6 -= d60
-	d76 := (in[7] - in[6]) >> 63
-	i7 -= d76
-	i6 += d76
-	out[(i6+6)%8] = 6
-
-	d70 := (in[7] - in[0]) >> 63
-	i7 -= d70
-	out[(i7+7)%8] = 7
+	// TODO: is this a pshufb?
+	const bits = 3
+	out[s>>(bits*0)%8] = 1
+	out[s>>(bits*1)%8] = 2
+	out[s>>(bits*2)%8] = 3
+	out[s>>(bits*3)%8] = 4
+	out[s>>(bits*4)%8] = 5
+	out[s>>(bits*5)%8] = 6
+	out[s>>(bits*6)%8] = 7
 
 	return out
 }

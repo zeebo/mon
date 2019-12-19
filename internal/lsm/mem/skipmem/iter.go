@@ -1,30 +1,28 @@
 package skipmem
 
 import (
-	"sync/atomic"
-
 	"github.com/zeebo/mon/internal/lsm/entry"
 	"github.com/zeebo/mon/internal/lsm/inlineptr"
 )
 
 type Iterator struct {
-	m  *T
-	id uint32
+	m   *T
+	cur chunkCursor
+	end bool
 
 	ent entry.T
 	key []byte
 	val []byte
 }
 
-func (i *Iterator) Next() bool {
-	i.id = atomic.LoadUint32(&i.m.ptrs[i.id].ptrs[0])
-	if i.id == 0 {
+func (i *Iterator) Next() (ok bool) {
+	if i.end {
 		return false
 	}
+	cent := i.cur.get()
+	i.end = !i.cur.right()
 
-	sent := &i.m.ents[i.id]
-	i.ent = entry.New(sent.kptr, i.m.vptrs[sent.val])
-
+	i.ent = i.m.ents[cent.idx]
 	switch kptr := i.ent.Key(); kptr[0] {
 	case inlineptr.Inline:
 		i.key = append(i.key[:0], kptr.InlineData()...)
