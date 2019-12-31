@@ -43,6 +43,10 @@ func (buf T) Pos() uptr {
 	return buf.pos
 }
 
+func (buf T) Cap() uptr {
+	return buf.cap
+}
+
 func (buf T) SetPos(pos uintptr) T {
 	buf.pos = pos
 	return buf

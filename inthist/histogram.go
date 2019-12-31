@@ -159,6 +159,31 @@ func (h *Histogram) Quantile(q float64) int64 {
 	}
 }
 
+// CDF returns an estimate for what quantile the value v is.
+func (h *Histogram) CDF(v int64) float64 {
+	var sum, total int64
+	vbucket, ventry := bucketEntry(v)
+	bm := h.bitmap.Clone()
+	for {
+		bucket, ok := bm.Next()
+		if !ok {
+			return float64(sum) / float64(total)
+		}
+
+		entries := &loadBucket(&h.buckets[bucket]).entries
+		bucketSum := int64(sumHistogram(entries))
+		total += bucketSum
+
+		if uint64(bucket) < vbucket {
+			sum += bucketSum
+		} else if uint64(bucket) == vbucket {
+			for i := uint64(0); i <= ventry; i++ {
+				sum += int64(entries[i])
+			}
+		}
+	}
+}
+
 // When computing the average or variance, we don't do any locking.
 // When we have finished adding up into the accumulator, we know the
 // actual statistic has to be somewhere between acc / stotal and

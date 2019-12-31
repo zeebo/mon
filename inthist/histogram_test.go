@@ -97,6 +97,18 @@ func TestHistogram(t *testing.T) {
 		assert.Equal(t, h.Quantile(1), 1000)
 	})
 
+	t.Run("CDF", func(t *testing.T) {
+		h := new(Histogram)
+		for i := int64(0); i < 1000; i++ {
+			h.Observe(i)
+		}
+
+		assert.Equal(t, h.CDF(0), 0.001)
+		assert.Equal(t, h.CDF(250), 0.252)
+		assert.Equal(t, h.CDF(500), 0.504)
+		assert.Equal(t, h.CDF(1000), 1.0)
+	})
+
 	t.Run("Variance", func(t *testing.T) {
 		h := new(Histogram)
 		rsum := int64(0)
@@ -130,8 +142,8 @@ func TestHistogram(t *testing.T) {
 			r := int64(pcg.Uint32n(100) + 500)
 			h.Observe(r)
 		}
-		// h.Observe(1)
-		// h.Observe(3)
+		h.Observe(1)
+		h.Observe(3)
 		h.Observe(5)
 
 		data := h.Serialize(nil)
@@ -230,6 +242,34 @@ func BenchmarkHistogram(b *testing.B) {
 		}
 	})
 
+	b.Run("CDF", func(b *testing.B) {
+		his := new(Histogram)
+		for i := 0; i < 1000000; i++ {
+			his.Observe(int64(pcg.Uint64() >> histEntriesBits))
+		}
+		assert.Equal(b, his.Total(), 1000000)
+		b.ReportAllocs()
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			his.CDF(int64(pcg.Uint64() >> histEntriesBits))
+		}
+	})
+
+	b.Run("CDF_Easy", func(b *testing.B) {
+		his := new(Histogram)
+		for i := 0; i < 1000000; i++ {
+			his.Observe(int64(pcg.Uint32n(64)))
+		}
+		assert.Equal(b, his.Total(), 1000000)
+		b.ReportAllocs()
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			his.CDF(int64(pcg.Uint32n(64)))
+		}
+	})
+
 	b.Run("Sum", func(b *testing.B) {
 		his := new(Histogram)
 		for i := 0; i < 1000; i++ {
@@ -304,6 +344,7 @@ func BenchmarkHistogram(b *testing.B) {
 		b.ReportAllocs()
 
 		for i := 0; i < b.N; i++ {
+			var h Histogram
 			_ = h.Load(buf)
 		}
 
