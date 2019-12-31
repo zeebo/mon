@@ -13,6 +13,8 @@ github.com/zeebo/swaparoo v0.0.0-20190813014544-3741c6b9f098 h1:g0DT2LjQiDRstaCU
 github.com/zeebo/swaparoo v0.0.0-20190813014544-3741c6b9f098/go.mod h1:TveyivVf9xhh7fp46c7LKlqot+aP8VUFoJePlzdpEsM=
 github.com/zeebo/this v0.0.0-20190611223713-2d3f8e177b7e h1:Rg+29CCUaNYYKyzmk7bBNFL7z4ALN2M1VXKxPsCS7aE=
 github.com/zeebo/this v0.0.0-20190611223713-2d3f8e177b7e/go.mod h1:NamLT9fyihYiE0UyxEpmBm0IYbT+QWThFzOPalRS21o=
+github.com/zeebo/wyhash v0.0.0-20191227230527-9d8e5e69186b h1:hSWvU+YNA2ynPS2XdxuTkxs05TO0XQ0d9RUVdY5gU+U=
+github.com/zeebo/wyhash v0.0.0-20191227230527-9d8e5e69186b/go.mod h1:Ti+OwfNtM5AZiYAL0kOPIfliqDP5c0VtOnnMAqzuuZk=
 github.com/zeebo/xxh3 v0.0.0-20191021174148-b56a7dc3d80c h1:3PaZXPP1fMCBSQzwmcfLs0pX9wOeZpKduDDcvp6lKCc=
 github.com/zeebo/xxh3 v0.0.0-20191021174148-b56a7dc3d80c/go.mod h1:e/zZObEJWtkq6f+bAzme0xQJSGI75oxoeqS+f2I7YVI=
 golang.org/x/arch v0.0.0-20190909030613-46d78d1859ac/go.mod h1:flIaEI6LNU6xOCD5PaJvn9wGP0agmIOqjrtsKGRguv4=

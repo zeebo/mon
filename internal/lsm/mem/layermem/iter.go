@@ -1,33 +1,33 @@
-package heapmem
+package layermem
 
 import (
 	"github.com/zeebo/mon/internal/lsm/entry"
 	"github.com/zeebo/mon/internal/lsm/inlineptr"
 )
 
-type Iterator struct {
-	cap  uint64
-	heap []entry.T
-	keys map[string]*entry.T
-	data []byte
+type layerEntriesIterator struct {
+	data  []byte
+	ents  []entry.T
+	lents []layerEntry
 
+	ok  bool
 	ent entry.T
 	key []byte
 	val []byte
 }
 
-func (i *Iterator) Next() bool {
-	heap, data := i.heap, i.data
+func (i *layerEntriesIterator) Next() bool {
+	lents, ents, data := i.lents, i.ents, i.data
 
-	if len(heap) == 0 {
+	if len(lents) == 0 {
 		return false
 	}
 
-	n := len(heap) - 1
-	i.ent = heap[0]
-	heap[0] = heap[n]
-	heapDown(data, heap)
-	i.heap = heap[:n]
+	lent := lents[0]
+	i.lents = lents[1:]
+	i.ok = false
+
+	i.ent = ents[lent.entry]
 
 	switch kptr := i.ent.Key(); kptr[0] {
 	case inlineptr.Inline:
@@ -50,20 +50,22 @@ func (i *Iterator) Next() bool {
 	return true
 }
 
-func (i *Iterator) Entry() entry.T { return i.ent }
+func (i *layerEntriesIterator) Entry() entry.T {
+	return i.ent
+}
 
-func (i *Iterator) Key() []byte {
+func (i *layerEntriesIterator) Key() []byte {
 	if i.ent.Key().Null() {
 		return nil
 	}
 	return i.key
 }
 
-func (i *Iterator) Value() []byte {
+func (i *layerEntriesIterator) Value() []byte {
 	if i.ent.Value().Null() {
 		return nil
 	}
 	return i.val
 }
 
-func (i *Iterator) Err() error { return nil }
+func (i *layerEntriesIterator) Err() error { return nil }

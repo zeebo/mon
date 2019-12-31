@@ -53,24 +53,51 @@ func TestSort(t *testing.T) {
 }
 
 func TestMin(t *testing.T) {
-	var rng pcg.T
+	for a := 0; a < 8; a++ {
+		for b := a; b < 8; b++ {
+			in := [...]uint64{2, 2, 2, 2, 2, 2, 2, 2}
+			in[a] = 0
+			in[b] = 0
 
-	for i := 0; i < 1000; i++ {
-		in := [...]uint64{
-			rng.Uint64(), rng.Uint64(), rng.Uint64(), rng.Uint64(),
-			rng.Uint64(), rng.Uint64(), rng.Uint64(), rng.Uint64(),
+			t.Log(in)
+			ga := Min(&in)
+			assert.Equal(t, a, ga)
 		}
+	}
+}
 
-		idx := Min(&in)
-		t.Logf("%016x %d", in, idx)
+func TestMin2(t *testing.T) {
+	for a := 0; a < 8; a++ {
+		for b := 0; b < 8; b++ {
+			if a == b {
+				continue
+			}
 
-		mi, m := 0, in[0]
-		for i, v := range in {
-			if v < m {
-				mi, m = i, v
+			in := [...]uint64{2, 2, 2, 2, 2, 2, 2, 2}
+			in[a] = 0
+			in[b] = 1
+
+			t.Log(in)
+			ga, gb := Min2(&in)
+			assert.Equal(t, a, ga)
+			assert.Equal(t, b, gb)
+		}
+	}
+
+	for b := 0; b < 8; b++ {
+		for a := 0; a < b; a++ {
+			for c := b; c < 8; c++ {
+				in := [...]uint64{2, 2, 2, 2, 2, 2, 2, 2}
+				in[a] = 0
+				in[b] = 0
+				in[c] = 0
+
+				t.Log(in)
+				ga, gb := Min2(&in)
+				assert.Equal(t, a, ga)
+				assert.Equal(t, b, gb)
 			}
 		}
-		assert.Equal(t, mi, idx)
 	}
 }
 
@@ -88,6 +115,14 @@ func BenchmarkMin(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		Min(vals(i))
+	}
+}
+
+func BenchmarkMin2(b *testing.B) {
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		Min2(vals(i))
 	}
 }
 

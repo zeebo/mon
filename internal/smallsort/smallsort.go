@@ -29,6 +29,47 @@ func Min(in *[8]uint64) (out uint8) {
 	return byte(idx)
 }
 
+func Min2(in *[8]uint64) (a, b uint8) {
+	av, bv := in[0], in[1]
+	ai, bi := uint64(0), uint64(1)
+	if bv < av {
+		bi, bv, ai, av = ai, av, bi, bv
+	}
+
+	if in[2] < av {
+		bi, bv, ai, av = ai, av, 2, in[2]
+	} else if in[2] < bv {
+		bi, bv = 2, in[2]
+	}
+	if in[3] < av {
+		bi, bv, ai, av = ai, av, 3, in[3]
+	} else if in[3] < bv {
+		bi, bv = 3, in[3]
+	}
+	if in[4] < av {
+		bi, bv, ai, av = ai, av, 4, in[4]
+	} else if in[4] < bv {
+		bi, bv = 4, in[4]
+	}
+	if in[5] < av {
+		bi, bv, ai, av = ai, av, 5, in[5]
+	} else if in[5] < bv {
+		bi, bv = 5, in[5]
+	}
+	if in[6] < av {
+		bi, bv, ai, av = ai, av, 6, in[6]
+	} else if in[6] < bv {
+		bi, bv = 6, in[6]
+	}
+	if in[7] < av {
+		bi, ai = ai, 7
+	} else if in[7] < bv {
+		bi = 7
+	}
+
+	return byte(ai), byte(bi)
+}
+
 func Sort(in *[8]uint64) (out [8]uint8) {
 	var sa, sb, sc, sd uint32
 

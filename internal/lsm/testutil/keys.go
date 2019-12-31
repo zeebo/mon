@@ -14,7 +14,7 @@ const (
 	ValueLength = 8
 	NumKeys     = 1 << 20
 
-	sorted   = false
+	sorted   = true
 	largeKey = "57389576498567394"
 )
 
