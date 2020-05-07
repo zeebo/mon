@@ -22,10 +22,12 @@ type Thunk struct {
 // Time returns a Timer where the name is chosen the first time by the caller. Don't
 // use the same Thunk from different functions/methods.
 func (t *Thunk) Start() Timer {
-	if t.val.Load() == nil {
-		t.val.Store(this.ThisN(1))
+	name := t.val.Load()
+	if name == nil {
+		name = this.ThisN(1)
+		t.val.Store(name)
 	}
-	return StartNamed(t.val.Load().(string))
+	return StartNamed(name.(string))
 }
 
 // Start returns a Timer using the calling function for the name.
