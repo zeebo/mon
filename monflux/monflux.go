@@ -24,8 +24,7 @@ func (c Collector) Write(w io.Writer) error {
 			m = fmt.Sprintf("%q", name)
 		}
 
-		current, total := state.Current(), state.Total()
-		fmt.Fprintf(ew, "%s current=%di\n", m, current)
+		total := state.Total()
 		fmt.Fprintf(ew, "%s total=%di\n", m, total)
 		for iter := state.Errors().Iterator(); iter.Next(); {
 			err, count := iter.Key(), atomic.LoadInt64((*int64)(iter.Value()))
