@@ -11,6 +11,7 @@ import (
 
 	chart "github.com/wcharczuk/go-chart"
 	"github.com/zeebo/mon"
+	"github.com/zeebo/mon/inthist"
 )
 
 // Handler serves information about collected metrics.
@@ -81,7 +82,7 @@ func getLabel(i int) string {
 	}
 }
 
-func makeChart(his *mon.Histogram, width, height, pow int) *chart.Chart {
+func makeChart(his *inthist.Histogram, width, height, pow int) *chart.Chart {
 	var x, y []float64
 	var t float64
 

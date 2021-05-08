@@ -7,6 +7,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/zeebo/mon"
+	"github.com/zeebo/mon/inthist"
 )
 
 var (
@@ -20,7 +21,6 @@ func newDesc(name, help string, labels ...string) *prometheus.Desc {
 }
 
 var (
-	descCurrent   = newDesc("current", "Currently active")
 	descTotal     = newDesc("total", "Total executed")
 	descErrors    = newDesc("errors", "Count of errors", errorLabel)
 	descAverage   = newDesc("average", "Average of monitored time")
@@ -32,7 +32,6 @@ type Collector struct {
 }
 
 func (c Collector) Describe(ch chan<- *prometheus.Desc) {
-	ch <- descCurrent
 	ch <- descTotal
 	ch <- descErrors
 	ch <- descAverage
@@ -45,7 +44,6 @@ func (c Collector) Collect(metrics chan<- prometheus.Metric) {
 	mon.Times(func(name string, state *mon.State) bool {
 		lp := []*dto.LabelPair{{Name: &nameLabel, Value: &name}}
 		_, average := state.Average()
-		metrics <- &metric{desc: descCurrent, lp: lp, float64: float64(state.Current())}
 		metrics <- &metric{desc: descTotal, lp: lp, float64: float64(state.Total())}
 		for iter := state.Errors().Iterator(); iter.Next(); {
 			name := iter.Key()
@@ -67,7 +65,7 @@ type metric struct {
 	desc      *prometheus.Desc
 	lp        []*dto.LabelPair
 	float64   float64
-	histogram *mon.Histogram
+	histogram *inthist.Histogram
 }
 
 func (m *metric) Desc() *prometheus.Desc { return m.desc }
@@ -76,7 +74,7 @@ func (m *metric) Write(o *dto.Metric) error {
 	o.Label = m.lp
 
 	switch m.desc {
-	case descCurrent, descAverage:
+	case descAverage:
 		o.Gauge = &dto.Gauge{Value: &m.float64}
 
 	case descTotal, descErrors:
