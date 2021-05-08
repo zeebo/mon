@@ -49,6 +49,12 @@ func TestTime(t *testing.T) {
 	})
 }
 
+func BenchmarkNanotime(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		_ = nanotime()
+	}
+}
+
 func BenchmarkTime(b *testing.B) {
 	b.Run("Auto", func(b *testing.B) {
 		b.ReportAllocs()

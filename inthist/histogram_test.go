@@ -169,6 +169,22 @@ func TestHistogram(t *testing.T) {
 }
 
 func BenchmarkHistogram(b *testing.B) {
+	b.Run("SumHistogramSlow", func(b *testing.B) {
+		var buf [64]uint32
+
+		for i := 0; i < b.N; i++ {
+			_ = sumHistogramSlow(&buf)
+		}
+	})
+
+	b.Run("SumHistogram", func(b *testing.B) {
+		var buf [64]uint32
+
+		for i := 0; i < b.N; i++ {
+			_ = sumHistogram(&buf)
+		}
+	})
+
 	b.Run("Observe", func(b *testing.B) {
 		his := new(Histogram)
 

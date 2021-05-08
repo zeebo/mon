@@ -52,7 +52,7 @@ func (Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var buf bytes.Buffer
-	_ = makeChart(his, width, height, pow).Render(chart.SVG, &buf)
+	_ = MakeChart(width, height, pow, his).Render(chart.SVG, &buf)
 
 	w.Header().Set("Content-Type", chart.ContentTypeSVG)
 	_, _ = w.Write(fixupViewbox(buf.Bytes(), width, height))
@@ -82,8 +82,12 @@ func getLabel(i int) string {
 	}
 }
 
-func makeChart(his *inthist.Histogram, width, height, pow int) *chart.Chart {
-	var x, y []float64
+func MakeChart(width, height, pow int, hiss ...*inthist.Histogram) *chart.Chart {
+	type line struct {
+		x, y []float64
+	}
+
+	var lines []line
 	var t float64
 
 	largest := 1.0
@@ -91,14 +95,18 @@ func makeChart(his *inthist.Histogram, width, height, pow int) *chart.Chart {
 		largest = 1.0 - math.Pow(0.1, float64(pow))
 	}
 
-	his.Percentiles(func(value, count, total int64) {
-		ptile := float64(count) / float64(total)
-		if ptile <= largest {
-			t = float64(total)
-			x = append(x, ptile)
-			y = append(y, float64(value))
-		}
-	})
+	for _, his := range hiss {
+		var l line
+		his.Percentiles(func(value, count, total int64) {
+			ptile := float64(count) / float64(total)
+			if ptile <= largest {
+				t = float64(total)
+				l.x = append(l.x, ptile)
+				l.y = append(l.y, float64(value))
+			}
+		})
+		lines = append(lines, l)
+	}
 
 	// make a log axis
 	if pow <= 0 {
@@ -143,11 +151,13 @@ func makeChart(his *inthist.Histogram, width, height, pow int) *chart.Chart {
 	})
 
 	// log scale the x axis
-	for i, v := range x {
-		if v == 1 {
-			x[i] = float64(pow)
-		} else {
-			x[i] = math.Log10(1 / (1 - v))
+	for _, l := range lines {
+		for i, v := range l.x {
+			if v == 1 {
+				l.x[i] = float64(pow)
+			} else {
+				l.x[i] = math.Log10(1 / (1 - v))
+			}
 		}
 	}
 
@@ -157,7 +167,7 @@ func makeChart(his *inthist.Histogram, width, height, pow int) *chart.Chart {
 		StrokeColor: chart.ColorBlack,
 	}
 
-	return &chart.Chart{
+	ch := &chart.Chart{
 		Width:  width,
 		Height: height,
 		XAxis: chart.XAxis{
@@ -181,16 +191,19 @@ func makeChart(his *inthist.Histogram, width, height, pow int) *chart.Chart {
 			GridMinorStyle: gridStyle,
 			GridMajorStyle: gridStyle,
 		},
-		Series: []chart.Series{
-			chart.ContinuousSeries{
-				Style: chart.Style{
-					Show:        true,
-					StrokeColor: chart.GetDefaultColor(0),
-					StrokeWidth: 3,
-				},
-				XValues: x,
-				YValues: y,
-			},
-		},
 	}
+
+	for i, l := range lines {
+		ch.Series = append(ch.Series, chart.ContinuousSeries{
+			Style: chart.Style{
+				Show:        true,
+				StrokeColor: chart.GetDefaultColor(i),
+				StrokeWidth: 3,
+			},
+			XValues: l.x,
+			YValues: l.y,
+		})
+	}
+
+	return ch
 }

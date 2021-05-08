@@ -10,7 +10,7 @@ import (
 )
 
 //go:noescape
-func sumHistogramAVX2(*[64]uint32) uint64
+func sumHistogramAVX2(data *[64]uint32) uint64
 
 // sumHistogram is either backed by AVX2 or a partially unrolled loop.
 var sumHistogram = map[bool]func(*[64]uint32) uint64{
@@ -21,14 +21,15 @@ var sumHistogram = map[bool]func(*[64]uint32) uint64{
 // sumHistogramSlow sums the histogram buffers using an unrolled loop.
 func sumHistogramSlow(buf *[64]uint32) (total uint64) {
 	for i := 0; i <= 56; i += 8 {
-		total += uint64(buf[i+0])
-		total += uint64(buf[i+1])
-		total += uint64(buf[i+2])
-		total += uint64(buf[i+3])
-		total += uint64(buf[i+4])
-		total += uint64(buf[i+5])
-		total += uint64(buf[i+6])
-		total += uint64(buf[i+7])
+		total += 0 +
+			uint64(buf[i+0]) +
+			uint64(buf[i+1]) +
+			uint64(buf[i+2]) +
+			uint64(buf[i+3]) +
+			uint64(buf[i+4]) +
+			uint64(buf[i+5]) +
+			uint64(buf[i+6]) +
+			uint64(buf[i+7])
 	}
 	return total
 }
@@ -288,6 +289,9 @@ func (h *Histogram) Percentiles(cb func(value, count, total int64)) {
 		b := loadBucket(&h.buckets[bucket])
 		for entry := range b.entries[:] {
 			if count := int64(atomic.LoadUint32(&b.entries[entry])); count > 0 {
+				if acc == 0 {
+					cb(lowerValue(uint64(bucket), uint64(entry)), 0, total)
+				}
 				acc += count
 				if acc > total {
 					total = h.Total()
