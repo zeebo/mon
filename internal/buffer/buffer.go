@@ -65,8 +65,20 @@ func (buf T) Reset() T {
 	return buf
 }
 
-func (buf T) Front() *[8]byte {
+func (buf T) Front() *byte {
+	return (*byte)(ptr(uptr(buf.base) + buf.pos))
+}
+
+func (buf T) Front4() *[4]byte {
+	return (*[4]byte)(ptr(uptr(buf.base) + buf.pos))
+}
+
+func (buf T) Front8() *[8]byte {
 	return (*[8]byte)(ptr(uptr(buf.base) + buf.pos))
+}
+
+func (buf T) Front9() *[9]byte {
+	return (*[9]byte)(ptr(uptr(buf.base) + buf.pos))
 }
 
 func (buf T) Remaining() uptr {
@@ -74,7 +86,7 @@ func (buf T) Remaining() uptr {
 }
 
 func (buf T) Grow() T {
-	if rem := buf.Remaining(); rem < 8 {
+	if rem := buf.Remaining(); rem < 9 {
 		buf.cap *= 2
 		n := make([]byte, buf.cap)
 		copy(n, buf.Prefix())
@@ -93,16 +105,20 @@ func (buf T) GrowN(n uintptr) T {
 	return buf
 }
 
-func (buf T) Head() *byte {
-	return (*byte)(ptr(uptr(buf.base) + buf.pos))
-}
-
 func (buf T) Index(n uintptr) *byte {
 	return (*byte)(ptr(uptr(buf.base) + n))
 }
 
+func (buf T) Index4(n uintptr) *[4]byte {
+	return (*[4]byte)(ptr(uptr(buf.base) + n))
+}
+
 func (buf T) Index8(n uintptr) *[8]byte {
 	return (*[8]byte)(ptr(uptr(buf.base) + n))
+}
+
+func (buf T) Index9(n uintptr) *[9]byte {
+	return (*[9]byte)(ptr(uptr(buf.base) + n))
 }
 
 func (buf T) Advance(n uptr) T {

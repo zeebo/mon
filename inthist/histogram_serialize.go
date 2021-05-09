@@ -57,7 +57,7 @@ func (h *Histogram) Serialize(dst []byte) []byte {
 				acount++
 
 				nbytes, enc := varintStats(skip)
-				le.PutUint64(buf.Front()[:], enc)
+				le.PutUint64(buf.Front8()[:], enc)
 				buf = buf.Advance(uintptr(nbytes)).Grow()
 				skip = 0
 			}
@@ -77,7 +77,7 @@ func (h *Histogram) Serialize(dst []byte) []byte {
 				val := uint32((delta + delta) ^ (delta >> 31))
 
 				nbytes, enc := varintStats(val)
-				le.PutUint64(buf.Front()[:], enc)
+				le.PutUint64(buf.Front8()[:], enc)
 				buf = buf.Advance(uintptr(nbytes)).Grow()
 			}
 
@@ -101,7 +101,7 @@ func (h *Histogram) Serialize(dst []byte) []byte {
 		acount++
 
 		nbytes, enc := varintStats(skip)
-		le.PutUint64(buf.Front()[:], enc)
+		le.PutUint64(buf.Front8()[:], enc)
 		buf = buf.Advance(uintptr(nbytes)).Grow()
 	}
 
@@ -124,7 +124,7 @@ func (h *Histogram) Load(data []byte) (err error) {
 	value := uint32(0)
 
 	for buf.Remaining() > 8 {
-		actions := le.Uint64(buf.Front()[:])
+		actions := le.Uint64(buf.Front8()[:])
 		buf = buf.Advance(8)
 
 		for i := 0; i < 64; i++ {
@@ -133,7 +133,7 @@ func (h *Histogram) Load(data []byte) (err error) {
 			rem := buf.Remaining()
 			if rem >= 8 {
 				var nbytes uint8
-				nbytes, dec = fastVarintConsume(le.Uint64(buf.Front()[:]))
+				nbytes, dec = fastVarintConsume(le.Uint64(buf.Front8()[:]))
 				buf = buf.Advance(uintptr(nbytes))
 				if buf.Pos() > buf.Cap() {
 					err = errs.New("invalid varint data")

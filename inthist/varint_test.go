@@ -20,7 +20,7 @@ func TestVarint(t *testing.T) {
 
 			nbytes, val := varintStats(1<<i - 1)
 			buf = buf.Grow()
-			le.PutUint64(buf.Front()[:], val)
+			le.PutUint64(buf.Front8()[:], val)
 			buf = buf.Advance(uintptr(nbytes))
 
 			got, _, ok := safeVarintConsume(buf.Reset())
@@ -37,10 +37,10 @@ func TestVarint(t *testing.T) {
 
 			nbytes, val := varintStats(1<<i - 1)
 			buf = buf.Grow()
-			le.PutUint64(buf.Front()[:], val)
+			le.PutUint64(buf.Front8()[:], val)
 			buf = buf.Advance(uintptr(nbytes))
 
-			_, dec := fastVarintConsume(le.Uint64(buf.Reset().Front()[:]))
+			_, dec := fastVarintConsume(le.Uint64(buf.Reset().Front8()[:]))
 			assert.Equal(t, uint32(1<<i-1), dec)
 
 			t.Logf("%-2d %032b %08b\n", i, dec, buf.Prefix())
@@ -59,7 +59,7 @@ func BenchmarkVarint(b *testing.B) {
 	for _, val := range randVals {
 		nbytes, enc := varintStats(val)
 		randBuf = randBuf.Grow()
-		le.PutUint64(randBuf.Front()[:], enc)
+		le.PutUint64(randBuf.Front8()[:], enc)
 		randBuf = randBuf.Advance(uintptr(nbytes))
 	}
 	randBuf = randBuf.Reset()
@@ -99,7 +99,7 @@ func BenchmarkVarint(b *testing.B) {
 				for i := 0; i < b.N; i++ {
 					_, val := varintStats(n)
 					buf = buf.Grow()
-					le.PutUint64(buf.Front()[:], val)
+					le.PutUint64(buf.Front8()[:], val)
 				}
 			})
 		}
@@ -110,7 +110,7 @@ func BenchmarkVarint(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				_, val := varintStats(randVals[i%(1024*1024)])
 				buf = buf.Grow()
-				le.PutUint64(buf.Front()[:], val)
+				le.PutUint64(buf.Front8()[:], val)
 			}
 		})
 	})
@@ -123,7 +123,7 @@ func BenchmarkVarint(b *testing.B) {
 
 				nbytes, val := varintStats(n)
 				buf = buf.Grow()
-				le.PutUint64(buf.Front()[:], val)
+				le.PutUint64(buf.Front8()[:], val)
 				buf = buf.Advance(uintptr(nbytes))
 
 				for i := 0; i < b.N; i++ {
@@ -151,12 +151,12 @@ func BenchmarkVarint(b *testing.B) {
 
 				nbytes, val := varintStats(n)
 				buf = buf.Grow()
-				le.PutUint64(buf.Front()[:], val)
+				le.PutUint64(buf.Front8()[:], val)
 				buf = buf.Advance(uintptr(nbytes))
 
 				var dec uint32
 				for i := 0; i < b.N; i++ {
-					_, dec = fastVarintConsume(le.Uint64(buf.Front()[:]))
+					_, dec = fastVarintConsume(le.Uint64(buf.Front8()[:]))
 				}
 				runtime.KeepAlive(dec)
 			})
@@ -168,7 +168,7 @@ func BenchmarkVarint(b *testing.B) {
 				if buf.Remaining() < 8 {
 					buf = buf.Reset()
 				}
-				nbytes, _ := fastVarintConsume(le.Uint64(buf.Front()[:]))
+				nbytes, _ := fastVarintConsume(le.Uint64(buf.Front8()[:]))
 				buf = buf.Advance(uintptr(nbytes))
 			}
 		})
