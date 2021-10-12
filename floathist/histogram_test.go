@@ -111,8 +111,9 @@ func BenchmarkHistogram(b *testing.B) {
 	b.Run("Total_Easy", func(b *testing.B) {
 		his := new(Histogram)
 		for i := 0; i < 1000000; i++ {
-			his.Observe(math.Float32frombits(pcg.Uint32() | ((1<<10 - 1) << 22)))
+			his.Observe(math.Float32frombits(pcg.Uint32() &^ ((1<<10 - 1) << 22)))
 		}
+		assert.Equal(b, his.Total(), 1000000)
 		b.ReportAllocs()
 		b.ResetTimer()
 
@@ -138,7 +139,7 @@ func BenchmarkHistogram(b *testing.B) {
 	b.Run("Quantile_Easy", func(b *testing.B) {
 		his := new(Histogram)
 		for i := 0; i < 1000000; i++ {
-			his.Observe(math.Float32frombits(pcg.Uint32() | ((1<<10 - 1) << 22)))
+			his.Observe(math.Float32frombits(pcg.Uint32() &^ ((1<<10 - 1) << 22)))
 		}
 		assert.Equal(b, his.Total(), 1000000)
 		b.ReportAllocs()
@@ -166,7 +167,7 @@ func BenchmarkHistogram(b *testing.B) {
 	b.Run("CDF_Easy", func(b *testing.B) {
 		his := new(Histogram)
 		for i := 0; i < 1000000; i++ {
-			his.Observe(math.Float32frombits(pcg.Uint32() | ((1<<10 - 1) << 22)))
+			his.Observe(math.Float32frombits(pcg.Uint32() &^ ((1<<10 - 1) << 22)))
 		}
 		assert.Equal(b, his.Total(), 1000000)
 		b.ReportAllocs()

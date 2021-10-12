@@ -31,6 +31,10 @@ type Histogram struct {
 }
 
 func (h *Histogram) Observe(v float32) {
+	if v != v || v > math.MaxFloat32 || v < -math.MaxFloat32 {
+		return
+	}
+
 	obs := math.Float32bits(v)
 	obs ^= uint32(int32(obs)>>31) | (1 << 31)
 
